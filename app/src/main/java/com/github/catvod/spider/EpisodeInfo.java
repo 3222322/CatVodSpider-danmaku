@@ -10,6 +10,15 @@ public class EpisodeInfo {
     private String seriesName;
     private String fileName;
     private String episodeUrl;
+    private String originalTitle;
+
+    public String getOriginalTitle() {
+        return originalTitle;
+    }
+
+    public void setOriginalTitle(String originalTitle) {
+        this.originalTitle = originalTitle;
+    }
 
     public String getEpisodeNum() {
         return episodeNum;

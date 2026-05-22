@@ -1069,8 +1069,10 @@ public class DanmakuUIHelper {
 
                     final EditText searchInput = new EditText(activity);
                     searchInput.setHint("输入关键词搜索弹幕...");
-                    String initialKeyword = episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
-                            ? episodeInfo.getEpisodeNames().get(0) : "";
+                    String initialKeyword = episodeInfo != null && !TextUtils.isEmpty(episodeInfo.getOriginalTitle()) 
+                            ? episodeInfo.getOriginalTitle() 
+                            : (episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
+                                ? episodeInfo.getEpisodeNames().get(0) : "");
                     String cachedKeyword = SharedPreferencesService.getSearchKeywordCache(activity, initialKeyword);
                     searchInput.setText(cachedKeyword);
                     searchInput.setHintTextColor(isDarkStyle ? DARK_TEXT_TERTIARY : TEXT_TERTIARY);
@@ -1211,8 +1213,8 @@ public class DanmakuUIHelper {
                                 return;
                             }
 
-                            String cacheKey = episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
-                                    ? episodeInfo.getEpisodeNames().get(0) : "";
+                            String cacheKey = episodeInfo != null && !TextUtils.isEmpty(episodeInfo.getOriginalTitle()) 
+                                    ? episodeInfo.getOriginalTitle() : "";
                             if (!keyword.equals(cacheKey)) {
                                 SharedPreferencesService.saveSearchKeywordCache(activity, cacheKey, keyword);
                                 DanmakuSpider.log("已保存新的搜索缓存: " + cacheKey + " -> " + keyword);

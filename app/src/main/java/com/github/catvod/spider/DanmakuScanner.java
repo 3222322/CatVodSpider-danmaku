@@ -232,6 +232,7 @@ public class DanmakuScanner {
         episodeInfo.setEpisodeSeasonNum(seasonNum);
         episodeInfo.setSeriesName(seriesName);
         episodeInfo.setFileName(media.getArtist().replace("正在播放：", ""));
+        episodeInfo.setOriginalTitle(extractTitle2);
         episodeInfo.setEpisodeUrl(media.getUrl());
 
         return episodeInfo;
