@@ -354,6 +354,27 @@ public class LeoDanmakuService {
                             }
                         }
                         if (!matchFound) {
+                            // 尝试匹配上下集（±1、±2）
+                            for (int offset = -2; offset <= 2; offset++) {
+                                if (offset == 0) continue;
+                                int adjEp = epNum + offset;
+                                if (adjEp <= 0) continue;
+                                String[] adjFormats = {
+                                    String.format("第%d集", adjEp),
+                                    String.format("_%02d", adjEp),
+                                    String.format("第%d期", adjEp),
+                                };
+                                for (String af : adjFormats) {
+                                    if (item.epTitle.contains(af)) {
+                                        matchFound = true;
+                                        DanmakuSpider.log("  ✅ 匹配到上下集: " + item.epTitle + " (当前集数: " + episodeNum + ", 匹配到: " + adjEp + ")");
+                                        break;
+                                    }
+                                }
+                                if (matchFound) break;
+                            }
+                        }
+                        if (!matchFound) {
                             DanmakuSpider.log("  ❌ 集数不匹配: " + item.epTitle + " (要求集数: " + episodeNum + ")");
                             isMatch = false;
                         }

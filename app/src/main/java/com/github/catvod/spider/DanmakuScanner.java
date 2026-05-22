@@ -687,6 +687,25 @@ public class DanmakuScanner {
         matcher = epPattern.matcher(processedTitle);
         if (matcher.find()) {
             String num = matcher.group(1);
+            int epNum = Integer.parseInt(num);
+            // 如果E后面的数字较小（如 E04），检查标题中是否有更大的独立数字（如 .249）
+            // 处理 E04.249 4K 这类格式，249才是真正集数
+            if (epNum <= 20) {
+                Pattern standaloneCheck = Pattern.compile("(?:[\\s\\[\\]()【】（）\\-._]|^)([0-9]{1,3})(?![0-9])");
+                Matcher stMatcher = standaloneCheck.matcher(processedTitle);
+                while (stMatcher.find()) {
+                    if (stMatcher.start(1) != matcher.start(1) || stMatcher.end(1) != matcher.end(1)) {
+                        String other = stMatcher.group(1);
+                        try {
+                            int otherNum = Integer.parseInt(other);
+                            if (otherNum > epNum && isLikelyEpisodeNumber(processedTitle, other, stMatcher.start(1), stMatcher.end(1))) {
+                                DanmakuSpider.log("EP/E 格式匹配小数字: " + num + "，但发现更大数字: " + other + "，优先使用");
+                                return checkForSpecialPrefix(processedTitle, other, stMatcher.start(1));
+                            }
+                        } catch (NumberFormatException e) {}
+                    }
+                }
+            }
             // DanmakuSpider.log("匹配 EP/E 格式: " + num);
             return num;
         }
