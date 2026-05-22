@@ -878,6 +878,7 @@ public class DanmakuUIHelper {
                 btnLayout.setPadding(0, dpToPx(activity, 4), 0, 0);
 
                 Button sortButton = createStyledButtonWithBorder(activity, "排序: 正序", PRIMARY_COLOR);
+                Button copyButton = createStyledButtonWithBorder(activity, "复制", PRIMARY_COLOR);
                 Button clearButton = createStyledButtonWithBorder(activity, "清空", PRIMARY_COLOR);
                 Button closeButton = createStyledButtonWithBorder(activity, "关闭", PRIMARY_COLOR);
 
@@ -886,10 +887,27 @@ public class DanmakuUIHelper {
                 btnParams.setMargins(dpToPx(activity, 4), 0, dpToPx(activity, 4), 0);
 
                 sortButton.setLayoutParams(btnParams);
+                copyButton.setLayoutParams(btnParams);
                 clearButton.setLayoutParams(btnParams);
                 closeButton.setLayoutParams(btnParams);
 
+                copyButton.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String logContent = DanmakuSpider.getLogContent();
+                        if (!TextUtils.isEmpty(logContent)) {
+                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+                            android.content.ClipData clip = android.content.ClipData.newPlainText("Leo日志", logContent);
+                            clipboard.setPrimaryClip(clip);
+                            Utils.safeShowToast(activity, "日志已复制到剪贴板");
+                        } else {
+                            Utils.safeShowToast(activity, "日志为空");
+                        }
+                    }
+                });
+
                 btnLayout.addView(sortButton);
+                btnLayout.addView(copyButton);
                 btnLayout.addView(clearButton);
                 btnLayout.addView(closeButton);
                 mainLayout.addView(btnLayout);
