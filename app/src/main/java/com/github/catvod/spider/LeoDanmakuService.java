@@ -297,6 +297,14 @@ public class LeoDanmakuService {
         // 自动搜索时使用集数参数
         List<DanmakuItem> results = searchDanmaku(episodeInfo, activity, true);
 
+        // 如果带集数搜不到，回退到不带集数搜索（解决 E60 等误识别为集数的问题）
+        boolean usedEpisodeFallback = false;
+        if (results.isEmpty() && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
+            DanmakuSpider.log("带集数搜索未找到结果，回退到不带集数搜索");
+            results = searchDanmaku(episodeInfo, activity, false);
+            usedEpisodeFallback = true;
+        }
+
         if (results.isEmpty()) {
             DanmakuSpider.log("自动搜索未找到任何结果 for keyword: " + searchKeyword);
             return new SearchResult(false, 0, null);
@@ -304,7 +312,7 @@ public class LeoDanmakuService {
 
         // 3. 筛选匹配集数的结果 (如果集数信息可用)
         List<DanmakuItem> matchedItems = new ArrayList<>();
-        DanmakuSpider.log("📥 开始筛选，原始结果数: " + results.size() + "，集数要求: " + episodeInfo.getEpisodeNum());
+        DanmakuSpider.log("📥 开始筛选，原始结果数: " + results.size() + "，集数要求: " + (usedEpisodeFallback ? "无(回退模式)" : episodeInfo.getEpisodeNum()));
         for (int i = 0; i < results.size(); i++) {
             DanmakuItem item = results.get(i);
 
@@ -318,8 +326,8 @@ public class LeoDanmakuService {
                 }
             }
 
-            // 如果年份匹配成功或没有年份信息，检查集数匹配
-            if (isMatch && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
+            // 检查集数匹配（如果是回退模式，跳过集数过滤，只靠标题相似度匹配）
+            if (!usedEpisodeFallback && isMatch && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
                 String episodeNum = episodeInfo.getEpisodeNum();
                 try {
                     int epNum = Integer.parseInt(episodeNum);
