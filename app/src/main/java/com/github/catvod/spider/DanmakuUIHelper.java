@@ -1171,6 +1171,7 @@ public class DanmakuUIHelper {
                     resultScroll.setBackgroundColor(isDarkStyle ? Color.TRANSPARENT : BACKGROUND_WHITE);
                     LinearLayout resultContainer = new LinearLayout(activity);
                     resultContainer.setOrientation(LinearLayout.VERTICAL);
+                    resultContainer.setGravity(Gravity.CENTER_HORIZONTAL);
                     resultContainer.setPadding(0, 10, 0, 0);
                     resultContainer.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
 
