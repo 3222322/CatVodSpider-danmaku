@@ -904,7 +904,14 @@ public class DanmakuScanner {
             if (numberStart > 1) {
                 String beforeNumber = title.substring(Math.max(0, numberStart - 3), numberStart);
                 if (beforeNumber.matches(".*[0-9]\\.[0-9]*$")) {
-                    return true; // 是 210.03 这种格式的一部分
+                    // 前面匹配了数字.数字格式，还需确认后面有文件大小单位
+                    // 防止误判 E04.252 这类格式（252前面有04.但后面没有GMK）
+                    if (numEnd < title.length()) {
+                        String afterSize = title.substring(numEnd, Math.min(title.length(), numEnd + 5));
+                        if (afterSize.matches("^(?:\\.?[0-9]*[GMK]B?\\b).*")) {
+                            return true;
+                        }
+                    }
                 }
             }
         }
