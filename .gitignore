@@ -2,8 +2,6 @@
 .idea
 *build
 /local.properties
-jar/custom_spider.jar
-jar/custom_spider.jar.md5
 jar/danmu.jar
 jar/danmu.jar.md5
 jar/spider.jar/
