@@ -1201,9 +1201,9 @@ public class DanmakuScanner {
             DanmakuSpider.log("⚠️ 未检测到剧集名，不进行换集检测");
             return;
         }
-        if (TextUtils.isEmpty(lastEpisodeInfo.getEpisodeNum())) {
-            DanmakuSpider.log("⚠️ 未检测到集数，不进行换集检测");
-            return;
+        boolean hasEpisode = !TextUtils.isEmpty(lastEpisodeInfo.getEpisodeNum());
+        if (!hasEpisode) {
+            DanmakuSpider.log("⚠️ 未检测到集数，尝试不带集数搜索");
         }
 
         // 检查是否是同一个剧集系列

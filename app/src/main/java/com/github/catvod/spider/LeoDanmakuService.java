@@ -305,6 +305,19 @@ public class LeoDanmakuService {
             usedEpisodeFallback = true;
         }
 
+        // 仍然无结果，尝试去掉符号重试（如 铁血战士：杀戮之地 → 铁血战士杀戮之地）
+        if (results.isEmpty() && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty()) {
+            String rawKeyword = episodeInfo.getEpisodeNames().get(0);
+            String cleanedKeyword = rawKeyword.replaceAll("[：*！@#￥%……&*（）_\\-/\\\\]", "");
+            if (!cleanedKeyword.equals(rawKeyword) && !TextUtils.isEmpty(cleanedKeyword)) {
+                DanmakuSpider.log("未找到结果，尝试去掉符号重试: " + rawKeyword + " -> " + cleanedKeyword);
+                String original = episodeInfo.getEpisodeNames().get(0);
+                episodeInfo.getEpisodeNames().set(0, cleanedKeyword);
+                results = searchDanmaku(episodeInfo, activity, false);
+                episodeInfo.getEpisodeNames().set(0, original);
+            }
+        }
+
         if (results.isEmpty()) {
             DanmakuSpider.log("自动搜索未找到任何结果 for keyword: " + searchKeyword);
             return new SearchResult(false, 0, null);
