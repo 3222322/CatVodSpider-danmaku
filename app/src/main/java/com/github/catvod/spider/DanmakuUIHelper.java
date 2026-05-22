@@ -1868,7 +1868,7 @@ public class DanmakuUIHelper {
                                 }
                                 String[] stripped = stripCommonParts(fullTitles);
                                 for (int i = 0; i < subButtons.length; i++) {
-                                    subButtons[i].setText(stripped[i]);
+                                    subButtons[i].setText("    " + stripped[i] + "    ");
                                 }
                                 int maxWidth = 0;
                                 for (Button btn : subButtons) {
@@ -2033,7 +2033,7 @@ public class DanmakuUIHelper {
         resultItem.setClickable(true);
         resultItem.setMinWidth(0);
         resultItem.setMinHeight(0);
-        resultItem.setText(item.getTitleWithEp());
+        resultItem.setText("    " + item.getTitleWithEp() + "    ");
         resultItem.setTextSize(13);
         resultItem.setEllipsize(null);
         resultItem.setHorizontallyScrolling(false);
