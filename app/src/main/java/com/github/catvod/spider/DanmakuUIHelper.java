@@ -97,7 +97,6 @@ public class DanmakuUIHelper {
     private static final int ACCENT_T2 = 0xFFFF9F0A;      // 模板二 暖橙
     private static final int ACCENT_T3 = 0xFF35C958;      // 模板三 翠绿
     private static final int ACCENT_T4 = 0xFF0A84FF;      // 模板四 亮蓝
-    private static final int ACCENT_T5 = 0xFF00E5C0;      // 模板五 青绿
     private static final int DARK_BG_SYSTEM = 0xE61C1C1E; // 深色系统黑
     private static final int DARK_TAB_BG = 0xFF2C2C2E;    // 深色页签底
     private static final int DARK_GRID_ITEM = 0xFF2C2C2E; // 深色网格项底
@@ -118,17 +117,6 @@ public class DanmakuUIHelper {
     private static final int TV_ACCENT = 0xFF00E5C0;
     private static final int TV_FOCUS_BLUE = 0xFF009DFF;
     private static final int TV_GLOW = 0x5900E5C0;
-
-    // ========== 模板五 Premium OLED 主题色 ==========
-    private static final int T5_ACCENT = 0xFF00E5C0;
-    private static final int T5_FOCUS_BLUE = 0xFF009DFF;
-    private static final int T5_DARK_BG = 0xFF05080E;
-    private static final int T5_CONTAINER_BG = 0xD1101624;
-    private static final int T5_CARD_BG = 0xFF101624;
-    private static final int T5_TEXT_PRIMARY = 0xFFE6ECF3;
-    private static final int T5_TEXT_SECONDARY = 0xFF7A8BA5;
-    private static final int T5_GLOW = 0x5900E5C0;
-
 
     /**
      * 排序状态标记 (false=正序, true=倒序)
@@ -522,7 +510,7 @@ public class DanmakuUIHelper {
                 mainLayout.addView(title);
 
                 DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
-                String[] styles = {"模板一", "模板二", "模板三", "模板四", "模板五"};
+                String[] styles = {"模板一", "模板二", "模板三", "模板四"};
                 String currentStyle = config.getDanmakuStyle();
                 
                 AlertDialog dialog = builder.create();
@@ -1084,9 +1072,8 @@ public class DanmakuUIHelper {
 
                     DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
                     String style = config.getDanmakuStyle();
-                    boolean isDarkStyle = style.equals("模板三") || style.equals("模板四") || style.equals("模板五");
-                    boolean isTVStyle = style.equals("模板四") || style.equals("模板五");
-                    boolean isT5Style = style.equals("模板五");
+                    boolean isDarkStyle = style.equals("模板三") || style.equals("模板四");
+                    boolean isTVStyle = style.equals("模板四");
 
                     AlertDialog.Builder builder = new AlertDialog.Builder(activity);
                     LinearLayout mainLayout = new LinearLayout(activity);
@@ -1106,11 +1093,7 @@ public class DanmakuUIHelper {
                     mainBg.setCornerRadius(dpToPx(activity, isTVStyle ? 28 : 18));
                     mainLayout.setBackground(mainBg);
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                        if (isT5Style) {
-                            mainBg.setStroke(1, 0x14FFFFFF);
-                            mainLayout.setElevation(dpToPx(activity, 20));
-                            mainLayout.setTranslationZ(dpToPx(activity, 8));
-                        } else if (isTVStyle) {
+                        if (isTVStyle) {
                             mainBg.setStroke(1, TV_BORDER);
                             mainLayout.setElevation(dpToPx(activity, 12));
                         }
@@ -1130,20 +1113,8 @@ public class DanmakuUIHelper {
                                 ? episodeInfo.getEpisodeNames().get(0) : "");
                     String cachedKeyword = SharedPreferencesService.getSearchKeywordCache(activity, initialKeyword);
                     searchInput.setText(cachedKeyword);
-                    searchInput.setHintTextColor(isT5Style ? T5_TEXT_SECONDARY : (isTVStyle ? TV_TEXT_SECONDARY : (isDarkStyle ? DARK_TEXT_TERTIARY : TEXT_TERTIARY)));
-                    if (isT5Style) {
-                        android.graphics.drawable.GradientDrawable inputBg = new android.graphics.drawable.GradientDrawable();
-                        inputBg.setColor(0x0AFFFFFF);
-                        inputBg.setCornerRadius(dpToPx(activity, 28));
-                        searchInput.setBackground(inputBg);
-                        searchInput.setPadding(dpToPx(activity, 24), dpToPx(activity, 16), dpToPx(activity, 24), dpToPx(activity, 16));
-                        searchInput.setTextSize(15);
-                        searchInput.setTextColor(T5_TEXT_PRIMARY);
-                        searchInput.setGravity(Gravity.CENTER);
-                        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, dpToPx(activity, 56), 1);
-                        inputParams.setMargins(dpToPx(activity, 8), 0, dpToPx(activity, 8), 0);
-                        searchInput.setLayoutParams(inputParams);
-                    } else if (isTVStyle) {
+                    searchInput.setHintTextColor(isTVStyle ? TV_TEXT_SECONDARY : (isDarkStyle ? DARK_TEXT_TERTIARY : TEXT_TERTIARY));
+                    if (isTVStyle) {
                         android.graphics.drawable.GradientDrawable inputBg = createTVCapsuleDrawable();
                         searchInput.setBackground(inputBg);
                         searchInput.setPadding(dpToPx(activity, 20), dpToPx(activity, 14), dpToPx(activity, 20), dpToPx(activity, 14));
@@ -1177,9 +1148,6 @@ public class DanmakuUIHelper {
                     } else if (style.equals("模板四")) {
                         reverseColor = REVERSE_GRAY;
                         reverseActiveColor = ACCENT_T4;
-                    } else if (style.equals("模板五")) {
-                        reverseColor = REVERSE_GRAY;
-                        reverseActiveColor = T5_ACCENT;
                     } else {
                         reverseColor = REVERSE_GRAY;
                         reverseActiveColor = PRIMARY_COLOR;
@@ -1192,34 +1160,24 @@ public class DanmakuUIHelper {
                         searchBtn.setTextSize(15);
                         searchBtn.setTypeface(null, android.graphics.Typeface.BOLD);
                         searchBtn.setTextColor(Color.WHITE);
-                        if (isT5Style) {
-                            searchBtn.setBackground(createT5GradientDrawable(activity));
-                        } else {
-                            searchBtn.setBackground(createTVGradientDrawable());
-                        }
-                        int searchBtnSize = isT5Style ? 56 : 50;
+                        searchBtn.setBackground(createTVGradientDrawable());
+                        int searchBtnSize = 50;
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                            searchBtn.setElevation(dpToPx(activity, isT5Style ? 8 : 4));
+                            searchBtn.setElevation(dpToPx(activity, 4));
                         }
                         searchBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 90), dpToPx(activity, searchBtnSize)));
                         searchBtn.setOnFocusChangeListener((v, hasFocus) -> {
                             if (hasFocus) {
                                 v.setScaleX(1.03f);
                                 v.setScaleY(1.03f);
-                                if (isT5Style) {
-                                    applyT5FocusBloom(v);
-                                }
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                                    v.setElevation(dpToPx(activity, isT5Style ? 12 : 8));
+                                    v.setElevation(dpToPx(activity, 8));
                                 }
                             } else {
                                 v.setScaleX(1.0f);
                                 v.setScaleY(1.0f);
-                                if (isT5Style) {
-                                    clearT5FocusBloom(v);
-                                }
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                                    v.setElevation(dpToPx(activity, isT5Style ? 8 : 4));
+                                    v.setElevation(dpToPx(activity, 4));
                                 }
                             }
                         });
@@ -1227,27 +1185,16 @@ public class DanmakuUIHelper {
                         reverseBtn = new Button(activity);
                         reverseBtn.setText(isReversed ? "倒序" : "正序");
                         reverseBtn.setTextSize(13);
-                        int rHeight = isT5Style ? 56 : 50;
-                        if (isT5Style) {
-                            reverseBtn.setTextColor(T5_TEXT_SECONDARY);
-                            reverseBtn.setBackground(createTVGlassDrawable(0x0AFFFFFF));
-                        } else {
-                            reverseBtn.setTextColor(TV_TEXT_SECONDARY);
-                            reverseBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
-                        }
-                        int rpHeight = isT5Style ? 56 : 50;
-                        reverseBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 60), dpToPx(activity, rpHeight)));
+                        reverseBtn.setTextColor(TV_TEXT_SECONDARY);
+                        reverseBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
+                        reverseBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 60), dpToPx(activity, 50)));
                         reverseBtn.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                             @Override
                             public void onFocusChange(View v, boolean hasFocus) {
                                 Button btn = (Button) v;
                                 boolean isRev = isReversed;
                                 if (hasFocus) {
-                                    if (isT5Style) {
-                                        btn.setBackground(isRev ? createT5GradientDrawable(activity) : createTVGlassDrawable(T5_CONTAINER_BG));
-                                        btn.setTextColor(isRev ? Color.WHITE : T5_TEXT_PRIMARY);
-                                        applyT5FocusBloom(v);
-                                    } else if (isTVStyle) {
+                                    if (isTVStyle) {
                                         btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
                                         btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_PRIMARY);
                                         v.setElevation(dpToPx(activity, 4));
@@ -1256,11 +1203,7 @@ public class DanmakuUIHelper {
                                     v.setScaleX(1.03f);
                                     v.setScaleY(1.03f);
                                 } else {
-                                    if (isT5Style) {
-                                        btn.setBackground(isRev ? createT5GradientDrawable(activity) : createTVGlassDrawable(0x0AFFFFFF));
-                                        btn.setTextColor(isRev ? Color.WHITE : T5_TEXT_SECONDARY);
-                                        clearT5FocusBloom(v);
-                                    } else if (isTVStyle) {
+                                    if (isTVStyle) {
                                         btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
                                         btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_SECONDARY);
                                         v.setElevation(0);
@@ -1274,11 +1217,11 @@ public class DanmakuUIHelper {
                         TextView gearBtn = new TextView(activity);
                         gearBtn.setText("⚙️");
                         gearBtn.setTextSize(15);
-                        gearBtn.setTextColor(isT5Style ? T5_TEXT_SECONDARY : TV_TEXT_SECONDARY);
+                        gearBtn.setTextColor(TV_TEXT_SECONDARY);
                         gearBtn.setGravity(Gravity.CENTER);
                         gearBtn.setClickable(true);
                         gearBtn.setFocusable(true);
-                        int gearH = isT5Style ? 56 : 50;
+                        int gearH = 50;
                         LinearLayout.LayoutParams gearParams = new LinearLayout.LayoutParams(dpToPx(activity, 29), dpToPx(activity, gearH));
                         gearParams.setMargins(0, 0, dpToPx(activity, 8), 0);
                         gearBtn.setLayoutParams(gearParams);
@@ -1292,7 +1235,7 @@ public class DanmakuUIHelper {
                         searchLayout.addView(searchInput);
                         searchLayout.addView(searchBtn);
                         View separator = new View(activity);
-                        int sepH = isT5Style ? 56 : 50;
+                        int sepH = 50;
                         LinearLayout.LayoutParams separatorParams = new LinearLayout.LayoutParams(dpToPx(activity, 16), dpToPx(activity, sepH));
                         separator.setLayoutParams(separatorParams);
                         searchLayout.addView(separator);
@@ -1351,9 +1294,7 @@ public class DanmakuUIHelper {
                     tabContainer.setOrientation(LinearLayout.HORIZONTAL);
                     tabContainer.setPadding(0, dpToPx(activity, 4), 0, dpToPx(activity, 8));
                     int tabBgColor;
-                    if (isT5Style) {
-                        tabBgColor = Color.TRANSPARENT;
-                    } else if (isTVStyle) {
+                    if (isTVStyle) {
                         tabBgColor = TV_CARD_BG;
                     } else if (style.equals("模板二")) {
                         tabBgColor = BACKGROUND_WHITE;
@@ -1366,10 +1307,7 @@ public class DanmakuUIHelper {
                     }
                     tabContainer.setBackgroundColor(tabBgColor);
                     LinearLayout.LayoutParams tabContainerParams;
-                    if (isT5Style) {
-                        tabContainerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                        tabContainerParams.setMargins(0, dpToPx(activity, 4), 0, dpToPx(activity, 10));
-                    } else if (isTVStyle) {
+                    if (isTVStyle) {
                         tabContainerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 52));
                         tabContainerParams.setMargins(0, dpToPx(activity, 4), 0, dpToPx(activity, 10));
                         android.graphics.drawable.GradientDrawable tabBg = new android.graphics.drawable.GradientDrawable();
@@ -1385,13 +1323,7 @@ public class DanmakuUIHelper {
 
                     ScrollView resultScroll = new ScrollView(activity);
                     resultScroll.setBackgroundColor(isDarkStyle ? Color.TRANSPARENT : (isTVStyle ? TV_CARD_BG : BACKGROUND_WHITE));
-                    if (isT5Style) {
-                        android.graphics.drawable.GradientDrawable resultBg = new android.graphics.drawable.GradientDrawable();
-                        resultBg.setColor(0x05FFFFFF);
-                        resultBg.setCornerRadius(dpToPx(activity, 20));
-                        resultScroll.setBackground(resultBg);
-                        resultScroll.setPadding(dpToPx(activity, 8), dpToPx(activity, 8), dpToPx(activity, 8), dpToPx(activity, 8));
-                    } else if (isTVStyle) {
+                    if (isTVStyle) {
                         android.graphics.drawable.GradientDrawable resultBg = new android.graphics.drawable.GradientDrawable();
                         resultBg.setColor(TV_CARD_BG);
                         resultBg.setCornerRadius(dpToPx(activity, 16));
@@ -1420,15 +1352,7 @@ public class DanmakuUIHelper {
                         @Override
                         public void onClick(View v) {
                             isReversed = !isReversed;
-                            if (isT5Style) {
-                                if (isReversed) {
-                                    reverseBtn.setBackground(createT5GradientDrawable(activity));
-                                    reverseBtn.setTextColor(Color.WHITE);
-                                } else {
-                                    reverseBtn.setBackground(createTVGlassDrawable(0x0AFFFFFF));
-                                    reverseBtn.setTextColor(T5_TEXT_SECONDARY);
-                                }
-                            } else if (isTVStyle) {
+                            if (isTVStyle) {
                                 if (isReversed) {
                                     reverseBtn.setBackground(createTVGradientDrawable());
                                     reverseBtn.setTextColor(Color.WHITE);
@@ -1542,11 +1466,7 @@ public class DanmakuUIHelper {
                                                         Button btn = (Button) v;
                                                         int restingColor = (int) ((Object[]) btn.getTag())[1];
                                                         if (hasFocus) {
-                                                            if (isT5Style) {
-                                                                v.setBackgroundColor(Color.TRANSPARENT);
-                                                                btn.setTextColor(Color.WHITE);
-                                                                applyT5FocusBloom(v);
-                                                            } else if (isTVStyle) {
+                                                            if (isTVStyle) {
                                                                 v.setBackground(createTVGradientDrawable());
                                                                 btn.setTextColor(Color.WHITE);
                                                                 applyTVFocusGlow(v, true, restingColor == finalTabAccent);
@@ -1568,11 +1488,7 @@ public class DanmakuUIHelper {
                                                             v.setScaleX(1.04f);
                                                             v.setScaleY(1.04f);
                                                         } else {
-                                                            if (isT5Style) {
-                                                                v.setBackgroundColor(Color.TRANSPARENT);
-                                                                btn.setTextColor(restingColor == finalTabAccent ? T5_ACCENT : T5_TEXT_SECONDARY);
-                                                                clearT5FocusBloom(v);
-                                                            } else if (isTVStyle) {
+                                                            if (isTVStyle) {
                                                                 v.setBackground(restingColor == finalTabAccent ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
                                                                 btn.setTextColor(restingColor == finalTabAccent ? Color.WHITE : TV_TEXT_SECONDARY);
                                                                 applyTVFocusGlow(v, false, restingColor == finalTabAccent);
@@ -1596,10 +1512,7 @@ public class DanmakuUIHelper {
                                                             Button btn = (Button) tabContainer.getChildAt(j);
                                                             Object[] tag = (Object[]) btn.getTag();
                                                             if (j == tabIndex) {
-                                                                if (isT5Style) {
-                                                                    btn.setBackgroundColor(Color.TRANSPARENT);
-                                                                    btn.setTextColor(T5_ACCENT);
-                                                                } else if (isTVStyle) {
+                                                                if (isTVStyle) {
                                                                      btn.setBackground(createTVGradientDrawable());
                                                                      btn.setTextColor(Color.WHITE);
                                                                  } else if (isDarkStyle) {
@@ -1612,10 +1525,7 @@ public class DanmakuUIHelper {
                                                                 tag[1] = finalTabAccent;
                                                             } else {
                                                                 int inactive = isDarkStyle ? DARK_INACTIVE : GRAY_INACTIVE;
-                                                                if (isT5Style) {
-                                                                    btn.setBackgroundColor(Color.TRANSPARENT);
-                                                                    btn.setTextColor(T5_TEXT_SECONDARY);
-                                                                } else if (isTVStyle) {
+                                                                if (isTVStyle) {
                                                                      btn.setBackground(createTVGlassDrawable(TV_CARD_BG));
                                                                      btn.setTextColor(TV_TEXT_SECONDARY);
                                                                  } else if (isDarkStyle) {
@@ -1651,10 +1561,7 @@ public class DanmakuUIHelper {
                                                 } else {
                                                     initialColor = containsLastUrl ? finalTabAccent : (isDarkStyle ? DARK_INACTIVE : GRAY_INACTIVE);
                                                 }
-                                                if (isT5Style) {
-                                                    tabBtn.setBackgroundColor(Color.TRANSPARENT);
-                                                    tabBtn.setTextColor(initialColor == finalTabAccent ? T5_ACCENT : T5_TEXT_SECONDARY);
-                                                } else if (isTVStyle) {
+                                                if (isTVStyle) {
                                                     tabBtn.setBackground(initialColor == finalTabAccent ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
                                                     tabBtn.setTextColor(initialColor == finalTabAccent ? Color.WHITE : TV_TEXT_SECONDARY);
                                                 } else if (isDarkStyle) {
@@ -1752,9 +1659,8 @@ public class DanmakuUIHelper {
 
         DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
         String currentStyle = config.getDanmakuStyle();
-        boolean isDarkStyle = currentStyle.equals("模板三") || currentStyle.equals("模板四") || currentStyle.equals("模板五");
-        boolean isTVStyle = currentStyle.equals("模板四") || currentStyle.equals("模板五");
-        boolean isT5Style = currentStyle.equals("模板五");
+        boolean isDarkStyle = currentStyle.equals("模板三") || currentStyle.equals("模板四");
+        boolean isTVStyle = currentStyle.equals("模板四");
 
         boolean useGrid = currentStyle.equals("模板二") || currentStyle.equals("模板三");
 
@@ -1768,10 +1674,6 @@ public class DanmakuUIHelper {
         } else if (currentStyle.equals("模板四")) {
             grpSel = 0xAA0A84FF;
             grpFoc = 0xCC0A84FF;
-            grpSelLight = 0; grpFocLight = 0;
-        } else if (currentStyle.equals("模板五")) {
-            grpSel = 0xAA009DFF;
-            grpFoc = 0xCC009DFF;
             grpSelLight = 0; grpFocLight = 0;
         } else if (currentStyle.equals("模板二")) {
             grpSel = 0xAAFF9F0A;
@@ -1798,10 +1700,7 @@ public class DanmakuUIHelper {
                 groupBtn.setTextSize(14);
                 groupBtn.setTypeface(null, android.graphics.Typeface.BOLD);
 
-                if (isT5Style) {
-                    groupBtn.setTextColor(Color.WHITE);
-                    groupBtn.setBackground(groupsWithLastUrl.contains(animeTitle) ? createT5GradientDrawable(activity) : createTVGlassDrawable(T5_CONTAINER_BG));
-                } else if (isTVStyle) {
+                if (isTVStyle) {
                     groupBtn.setTextColor(Color.WHITE);
                     groupBtn.setBackground(groupsWithLastUrl.contains(animeTitle) ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
                 } else if (isDarkStyle) {
@@ -1843,11 +1742,7 @@ public class DanmakuUIHelper {
                         }
 
                         if (hasFocus) {
-                            if (isT5Style) {
-                                v.setBackground(createT5GradientDrawable((Activity)v.getContext()));
-                                button.setTextColor(Color.WHITE);
-                                applyT5FocusBloom(v);
-                            } else if (isTVStyle) {
+                            if (isTVStyle) {
                                 v.setBackground(createTVGradientDrawable());
                                 button.setTextColor(Color.WHITE);
                                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
@@ -1869,10 +1764,7 @@ public class DanmakuUIHelper {
                                 v.setTranslationZ(0);
                             }
                             if (groupsWithLastUrl.contains(title)) {
-                                if (isT5Style) {
-                                    v.setBackground(createT5GradientDrawable((Activity)v.getContext()));
-                                    button.setTextColor(Color.WHITE);
-                                } else if (isTVStyle) {
+                                if (isTVStyle) {
                                     v.setBackground(createTVGradientDrawable());
                                     button.setTextColor(Color.WHITE);
                                 } else if (isDarkStyle) {
@@ -1883,10 +1775,7 @@ public class DanmakuUIHelper {
                                     button.setTextColor(Color.WHITE);
                                 }
                             } else {
-                                if (isT5Style) {
-                                    v.setBackground(createTVGlassDrawable(T5_CONTAINER_BG));
-                                    button.setTextColor(T5_TEXT_SECONDARY);
-                                } else if (isDarkStyle) {
+                                if (isDarkStyle) {
                                     v.setBackground(createRoundedTransparentDrawable(DARK_BG_SECONDARY));
                                     button.setTextColor(DARK_TEXT_PRIMARY);
                                 } else {
@@ -1894,7 +1783,6 @@ public class DanmakuUIHelper {
                                     button.setTextColor(TEXT_PRIMARY);
                                 }
                             }
-                            clearT5FocusBloom(v);
                             v.setScaleX(1.0f);
                             v.setScaleY(1.0f);
                         }
@@ -1913,10 +1801,7 @@ public class DanmakuUIHelper {
                                 for (java.util.Map.Entry<String, Button> entry : groupButtons.entrySet()) {
                                     Button otherBtn = entry.getValue();
                                     if (otherBtn == v) {
-                                        if (isT5Style) {
-                                            otherBtn.setBackground(createT5GradientDrawable(activity));
-                                            otherBtn.setTextColor(Color.WHITE);
-                                        } else if (isTVStyle) {
+                                        if (isTVStyle) {
                                     otherBtn.setBackground(createTVGradientDrawable());
                                     otherBtn.setTextColor(Color.WHITE);
                                 } else if (isDarkStyle) {
@@ -1929,10 +1814,7 @@ public class DanmakuUIHelper {
                                 groupsWithLastUrl.clear();
                                 groupsWithLastUrl.add(entry.getKey());
                                     } else {
-                                        if (isT5Style) {
-                                            otherBtn.setBackground(createTVGlassDrawable(T5_CONTAINER_BG));
-                                            otherBtn.setTextColor(T5_TEXT_SECONDARY);
-                                        } else if (isTVStyle) {
+                                        if (isTVStyle) {
                                     otherBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
                                     otherBtn.setTextColor(TV_TEXT_SECONDARY);
                                 } else if (isDarkStyle) {
@@ -1985,9 +1867,7 @@ public class DanmakuUIHelper {
                             // 为每个剧集创建网格按钮
                             for (DanmakuItem item : animeItems) {
                                 Button gridItem;
-                                if (isT5Style) {
-                                    gridItem = createT5GridResultButton(activity, item, dialog);
-                                } else if (isTVStyle) {
+                                if (isTVStyle) {
                                     gridItem = createTVGridResultButton(activity, item, dialog);
                                 } else {
                                     gridItem = isDarkStyle ? createDarkGridResultButton(activity, item, dialog) : createGridResultButton(activity, item, dialog);
@@ -2571,119 +2451,6 @@ public class DanmakuUIHelper {
         return resultItem;
     }
 
-    // T5 网格结果按钮
-    private static Button createT5GridResultButton(Activity activity, DanmakuItem item, AlertDialog dialog) {
-        Button resultItem = new Button(activity);
-        resultItem.setFocusable(true);
-        resultItem.setFocusableInTouchMode(true);
-        resultItem.setClickable(true);
-
-        String displayText = DanmakuScanner.extractEpisodeNum(item.epTitle);
-        if (TextUtils.isEmpty(displayText)) {
-            String[] parts = item.epTitle != null ? item.epTitle.split(" ") : new String[0];
-            if (parts.length > 1) {
-                displayText = parts[1];
-            } else if (parts.length > 0) {
-                displayText = parts[0];
-            } else {
-                displayText = item.epTitle != null ? item.epTitle : "未知";
-            }
-        }
-
-        resultItem.setText(displayText);
-        resultItem.setTextSize(13);
-        resultItem.setTextColor(T5_TEXT_PRIMARY);
-
-        int padding = dpToPx(activity, 10);
-        resultItem.setPadding(padding, padding, padding, padding);
-        resultItem.setSingleLine(true);
-        resultItem.setEllipsize(TextUtils.TruncateAt.END);
-        resultItem.setGravity(Gravity.CENTER);
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            resultItem.setTooltipText(item.getTitleWithEp());
-        }
-
-        String currentDanmakuUrl = item.getDanmakuUrl();
-        if (currentDanmakuUrl != null && currentDanmakuUrl.equals(DanmakuManager.lastDanmakuUrl)) {
-            resultItem.setBackground(createT5GradientDrawable(activity));
-            resultItem.setTextColor(Color.WHITE);
-        } else {
-            android.graphics.drawable.GradientDrawable gd = createTVGlassDrawable(T5_CONTAINER_BG);
-            gd.setStroke(dpToPx(activity, 1), 0x1A009DFF);
-            resultItem.setBackground(gd);
-            resultItem.setTextColor(T5_TEXT_PRIMARY);
-        }
-
-        GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-        params.height = GridLayout.LayoutParams.WRAP_CONTENT;
-
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            params.width = 0;
-            params.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-            params.rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        } else {
-            params.width = dpToPx(activity, 80);
-        }
-
-        int margin = dpToPx(activity, 6);
-        params.setMargins(margin, margin, margin, margin);
-
-        resultItem.setLayoutParams(params);
-        resultItem.setTag(item);
-
-        resultItem.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                DanmakuItem item_tag = (DanmakuItem) v.getTag();
-                String danmakuUrl = item_tag.getDanmakuUrl();
-                boolean isLastUrl = danmakuUrl != null && danmakuUrl.equals(DanmakuManager.lastDanmakuUrl);
-
-                if (hasFocus) {
-                    v.setBackground(createT5GradientDrawable(activity));
-                    ((Button) v).setTextColor(Color.WHITE);
-                    applyT5FocusBloom(v);
-                    v.setScaleX(1.03f);
-                    v.setScaleY(1.03f);
-                } else {
-                    clearT5FocusBloom(v);
-                    if (isLastUrl) {
-                        v.setBackground(createT5GradientDrawable(activity));
-                        ((Button) v).setTextColor(Color.WHITE);
-                    } else {
-                        android.graphics.drawable.GradientDrawable gd = createTVGlassDrawable(T5_CONTAINER_BG);
-                        gd.setStroke(dpToPx(activity, 1), 0x1A009DFF);
-                        v.setBackground(gd);
-                        ((Button) v).setTextColor(T5_TEXT_PRIMARY);
-                    }
-                    v.setScaleX(1.0f);
-                    v.setScaleY(1.0f);
-                }
-            }
-        });
-
-        resultItem.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v1) {
-                DanmakuItem selected = (DanmakuItem) v1.getTag();
-                DanmakuSpider.recordDanmakuUrl(selected, false);
-                LeoDanmakuService.pushDanmakuDirect(selected, activity, false);
-                dialog.dismiss();
-            }
-        });
-
-        resultItem.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                DanmakuItem item = (DanmakuItem) v.getTag();
-                Utils.safeShowToast(activity, item.getTitleWithEp(),  true);
-                return true;
-            }
-        });
-
-        return resultItem;
-    }
-
     // 创建网格布局结果按钮的辅助方法
     private static Button createGridResultButton(Activity activity, DanmakuItem item, AlertDialog dialog) {
         Button resultItem = new Button(activity);
@@ -3004,7 +2771,6 @@ public class DanmakuUIHelper {
         if (style.equals("模板二")) return ACCENT_T2;
         if (style.equals("模板三")) return ACCENT_T3;
         if (style.equals("模板四")) return ACCENT_T4;
-        if (style.equals("模板五")) return T5_ACCENT;
         return PRIMARY_COLOR;
     }
 
@@ -3120,56 +2886,5 @@ public class DanmakuUIHelper {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    // ========== 模板五 Premium OLED 辅助方法 ==========
-
-    // T5 蓝青渐变背景
-    private static android.graphics.drawable.GradientDrawable createT5GradientDrawable(Activity activity) {
-        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                new int[]{T5_FOCUS_BLUE, T5_ACCENT}
-        );
-        gd.setCornerRadius(dpToPx(activity, 20));
-        return gd;
-    }
-
-    // T5 标签底部下划线背景（选中态）
-    private static android.graphics.drawable.Drawable createT5UnderlineDrawable(Activity activity, int accentColor, boolean isActive) {
-        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
-        bg.setColor(Color.TRANSPARENT);
-        bg.setCornerRadius(0);
-        if (isActive) {
-            android.graphics.drawable.GradientDrawable line = new android.graphics.drawable.GradientDrawable();
-            line.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
-            line.setSize(dpToPx(activity, 24), dpToPx(activity, 2));
-            line.setCornerRadius(dpToPx(activity, 1));
-            line.setColor(accentColor);
-            android.graphics.drawable.LayerDrawable layer = new android.graphics.drawable.LayerDrawable(
-                    new android.graphics.drawable.Drawable[]{bg, line}
-            );
-            int w = dpToPx(activity, 24);
-            int h = dpToPx(activity, 2);
-            int tb = dpToPx(activity, 4);
-            layer.setLayerInset(1, (bg.getIntrinsicWidth() - w) / 2, bg.getIntrinsicHeight() - h - tb, (bg.getIntrinsicWidth() - w) / 2, tb);
-            return layer;
-        }
-        return bg;
-    }
-
-    // T5 焦点 Bloom 光晕
-    private static void applyT5FocusBloom(View v) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            v.setElevation(dpToPx((Activity)v.getContext(), 12));
-            v.setTranslationZ(dpToPx((Activity)v.getContext(), 8));
-            v.setOutlineSpotShadowColor(0x4C00E5C0);
-            v.setOutlineAmbientShadowColor(0x26009DFF);
-        }
-    }
-
-    // T5 清除焦点光晕
-    private static void clearT5FocusBloom(View v) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            v.setElevation(dpToPx((Activity)v.getContext(), 4));
-            v.setTranslationZ(0);
-        }
-    }
 }
+
