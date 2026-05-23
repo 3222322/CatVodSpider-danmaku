@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板四 · 当前实现预览</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #141824;
+  display: flex; justify-content: center; align-items: center;
+  min-height: 100vh; padding: 20px;
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+/* 对话框容器 - 当前模板四实现 */
+.frame {
+  background: #1A1F2E;
+  border-radius: 28px;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  padding: 16px 20px;
+  width: 420px;
+  max-width: 100%;
+}
+
+/* 搜索行 */
+.row {
+  display: flex; align-items: center; gap: 6px;
+  padding-bottom: 4px;
+}
+.gear {
+  width: 36px; height: 50px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: rgba(255,255,255,0.45); cursor: pointer;
+}
+.input {
+  flex: 1; min-width: 0; height: 50px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 28px;
+  padding: 0 20px; font-size: 15px; color: #fff;
+  text-align: center; outline: none;
+}
+.input::placeholder { color: rgba(255,255,255,0.3); }
+
+.btn-search {
+  flex: none; width: 88px; height: 50px;
+  background: linear-gradient(135deg, #4A90FF, #00D4AA);
+  border: none; border-radius: 25px;
+  color: #fff; font-size: 15px; font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(74,144,255,0.25);
+  transition: all 0.2s;
+}
+.btn-search:hover { transform: scale(1.02); box-shadow: 0 8px 20px rgba(74,144,255,0.4); }
+.btn-reverse {
+  flex: none; width: 60px; height: 50px; margin-left: 6px;
+  background: rgba(255,255,255,0.06);
+  border: none; border-radius: 25px;
+  color: rgba(255,255,255,0.45); font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-reverse:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); }
+
+/* Tab 栏 */
+.tabs {
+  display: flex; gap: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 16px; padding: 4px;
+  margin: 6px 0 8px;
+}
+.tab {
+  flex: 1; height: 44px;
+  border: none; border-radius: 14px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer; background: transparent;
+  color: rgba(255,255,255,0.45);
+  transition: all 0.2s;
+}
+.tab.active {
+  background: linear-gradient(135deg, #4A90FF, #00D4AA);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(74,144,255,0.2);
+}
+.tab:hover:not(.active) { background: rgba(255,255,255,0.1); }
+.tab:hover:not(.active) {
+  background: rgba(255,255,255,0.1);
+}
+
+/* 结果区 */
+.result {
+  background: rgba(255,255,255,0.04);
+  border-radius: 16px; padding: 8px;
+  max-height: 360px; overflow-y: auto;
+}
+.group {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 12px 20px; margin-bottom: 6px;
+  background: rgba(255,255,255,0.06);
+  border: none; border-radius: 20px;
+  color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer; text-align: left;
+  transition: all 0.2s;
+}
+.group:hover:not(.active) { background: rgba(255,255,255,0.1); }
+.group.active {
+  background: linear-gradient(135deg, #4A90FF, #00D4AA);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(74,144,255,0.15);
+}
+.badge {
+  padding: 2px 10px; font-size: 12px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 12px; color: rgba(255,255,255,0.5);
+}
+.group.active .badge { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.8); }
+
+/* 网格 */
+.grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  padding: 6px 6px 10px;
+}
+.cell {
+  aspect-ratio: 1;
+  background: rgba(255,255,255,0.06);
+  border: none; border-radius: 14px;
+  color: rgba(255,255,255,0.7); font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.cell:hover { background: rgba(255,255,255,0.1); transform: scale(1.03); }
+.cell.active {
+  background: linear-gradient(135deg, #4A90FF, #00D4AA);
+  color: #fff;
+}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="row">
+    <div class="gear">&#x2699;&#xFE0F;</div>
+    <input class="input" placeholder="输入关键词搜索弹幕..." value="转生成史莱姆">
+    <button class="btn-search">搜索</button>
+    <button class="btn-reverse">正序</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active">默认</button>
+    <button class="tab">巴哈姆特</button>
+    <button class="tab">CR</button>
+  </div>
+  <div class="result">
+    <button class="group active">
+      <span>转生成史莱姆 (24集)</span>
+      <span class="badge">展开 [-]</span>
+    </button>
+    <div class="grid">
+      <button class="cell active">01</button>
+      <button class="cell">02</button>
+      <button class="cell">03</button>
+      <button class="cell">04</button>
+      <button class="cell">05</button>
+      <button class="cell">06</button>
+      <button class="cell">07</button>
+      <button class="cell">08</button>
+      <button class="cell">09</button>
+      <button class="cell">10</button>
+      <button class="cell">11</button>
+      <button class="cell">12</button>
+    </div>
+    <button class="group"><span>无职转生 (12集)</span><span class="badge">收起</span></button>
+    <button class="group"><span>咒术回战 (6集)</span><span class="badge">收起</span></button>
+  </div>
+</div>
+</body>
+</html>
