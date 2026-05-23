@@ -1237,6 +1237,40 @@ public class DanmakuUIHelper {
                         }
                         int rpHeight = isT5Style ? 56 : 50;
                         reverseBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 60), dpToPx(activity, rpHeight)));
+                        reverseBtn.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                            @Override
+                            public void onFocusChange(View v, boolean hasFocus) {
+                                Button btn = (Button) v;
+                                boolean isRev = isReversed;
+                                if (hasFocus) {
+                                    if (isT5Style) {
+                                        btn.setBackground(isRev ? createT5GradientDrawable(activity) : createTVGlassDrawable(T5_CONTAINER_BG));
+                                        btn.setTextColor(isRev ? Color.WHITE : T5_TEXT_PRIMARY);
+                                        applyT5FocusBloom(v);
+                                    } else if (isTVStyle) {
+                                        btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
+                                        btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_PRIMARY);
+                                        v.setElevation(dpToPx(activity, 4));
+                                        v.setTranslationZ(dpToPx(activity, 2));
+                                    }
+                                    v.setScaleX(1.03f);
+                                    v.setScaleY(1.03f);
+                                } else {
+                                    if (isT5Style) {
+                                        btn.setBackground(isRev ? createT5GradientDrawable(activity) : createTVGlassDrawable(0x0AFFFFFF));
+                                        btn.setTextColor(isRev ? Color.WHITE : T5_TEXT_SECONDARY);
+                                        clearT5FocusBloom(v);
+                                    } else if (isTVStyle) {
+                                        btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
+                                        btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_SECONDARY);
+                                        v.setElevation(0);
+                                        v.setTranslationZ(0);
+                                    }
+                                    v.setScaleX(1.0f);
+                                    v.setScaleY(1.0f);
+                                }
+                            }
+                        });
                         TextView gearBtn = new TextView(activity);
                         gearBtn.setText("⚙️");
                         gearBtn.setTextSize(15);
