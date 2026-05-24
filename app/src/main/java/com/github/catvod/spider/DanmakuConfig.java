@@ -38,6 +38,10 @@ public class DanmakuConfig {
      * 静默模式，开启时不再弹出任何提示信息
      */
     public boolean silentMode;
+    /**
+     * 代理类型：0=未设置，1=Go代理，2=Java代理
+     */
+    public int proxyType;
 
     public DanmakuConfig() {
         // 设置默认值
@@ -48,6 +52,7 @@ public class DanmakuConfig {
         autoPushEnabled = false;
         danmakuStyle = "模板一";
         silentMode = true;
+        proxyType = 0;
     }
 
     public void updateFromJson(JSONObject json) {
@@ -72,6 +77,9 @@ public class DanmakuConfig {
         }
         if (json.has("silentMode")) {
             setSilentMode(json.optBoolean("silentMode", silentMode));
+        }
+        if (json.has("proxyType")) {
+            setProxyType(json.optInt("proxyType", proxyType));
         }
     }
 
@@ -129,5 +137,15 @@ public class DanmakuConfig {
 
     public void setSilentMode(boolean silentMode) {
         this.silentMode = silentMode;
+    }
+
+    public int getProxyType() {
+        return proxyType;
+    }
+
+    public void setProxyType(int proxyType) {
+        if (proxyType < 0) proxyType = 0;
+        if (proxyType > 2) proxyType = 0;
+        this.proxyType = proxyType;
     }
 }

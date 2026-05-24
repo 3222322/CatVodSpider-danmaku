@@ -43,7 +43,7 @@ public class Init {
         Proxy.init();
 
         // 初始化并启动GoProxy（如果需要），并启动健康检查
-        GoProxyManager.initialize(context);
+        ProxyManager.initialize(context);
 
         // 删除弹幕缓存
         DanmakuSpider.clearCache(context);

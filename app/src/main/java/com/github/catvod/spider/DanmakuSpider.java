@@ -213,21 +213,21 @@ public class DanmakuSpider extends Spider {
                     "当前: " + config.getDanmakuStyle());
             list.put(styleVod);
 
-            // 只有当Go代理资源文件存在时才显示相关按钮
-            if (GoProxyManager.isGoProxyAssetExists()) {
-                // 创建Go代理状态按钮
-                String proxyStatus = GoProxyManager.isProxyRunning.get() ? "运行中" : "已停止";
-                String proxyHealth = GoProxyManager.isProxyHealthy() ? "健康" : "异常";
-                String proxyStatusText = GoProxyManager.isProxyRunning.get() ? proxyStatus + " | " + proxyHealth : proxyStatus;
-                JSONObject proxyStatusVod = createVod("proxy_status", "Go代理状态", "",
-                        proxyStatusText);
-                list.put(proxyStatusVod);
+            // 代理操作按钮 - 始终显示
+            String proxyStatus = ProxyManager.isProxyRunning() ? "运行中" : "已停止";
+            String proxyType = ProxyManager.getProxyTypeName();
+            String proxyStatusText = proxyType + " | " + proxyStatus;
+            JSONObject proxyStatusVod = createVod("proxy_status", "代理状态", "",
+                    proxyStatusText);
+            list.put(proxyStatusVod);
 
-                // 创建Go代理重启按钮
-                JSONObject proxyRestartVod = createVod("proxy_restart", "重启Go代理", "",
-                        "点击重启代理服务");
-                list.put(proxyRestartVod);
-            }
+            JSONObject proxySwitchVod = createVod("proxy_switch", "切换代理", "",
+                    "当前: " + proxyType);
+            list.put(proxySwitchVod);
+
+            JSONObject proxyRestartVod = createVod("proxy_restart", "重启代理", "",
+                    "点击重启代理服务");
+            list.put(proxyRestartVod);
 
             result.put("list", list);
             result.put("page", 1);
@@ -289,21 +289,37 @@ public class DanmakuSpider extends Spider {
                                 } else if (id.equals("danmaku_style")) {
                                     DanmakuUIHelper.showDanmakuStyleDialog(ctx);
                                 } else if (id.equals("proxy_status")) {
-                                    // 显示Go代理状态详情
-                                    String status = GoProxyManager.isProxyRunning.get() ? "运行中" : "已停止";
-                                    String health = GoProxyManager.isProxyHealthy() ? "健康" : "异常";
-                                    String toastMsg = GoProxyManager.isProxyRunning.get() ?
-                                            "Go代理状态: " + status + "\n健康检查: " + health :
-                                            "Go代理状态: " + status;
+                                    // 显示代理状态详情
+                                    String status = ProxyManager.getProxyStatusText();
+                                    String type = ProxyManager.getProxyTypeName();
+                                    String toastMsg = "代理类型: " + type + "\n状态: " + status;
                                     Utils.safeShowToast(ctx, toastMsg);
                                     refreshCategoryContent(ctx);
+                                } else if (id.equals("proxy_switch")) {
+                                    // 切换代理类型
+                                    int currentType = ProxyManager.getActiveProxyType();
+                                    if (currentType == ProxyManager.PROXY_TYPE_GO) {
+                                        ProxyManager.switchToJavaProxy(ctx.getApplicationContext());
+                                        Utils.safeShowToast(ctx, "切换到Java代理中...");
+                                    } else {
+                                        if (ProxyManager.canSwitchToGoProxy()) {
+                                            ProxyManager.switchToGoProxy(ctx.getApplicationContext());
+                                            Utils.safeShowToast(ctx, "切换到Go代理中...");
+                                        } else {
+                                            Utils.safeShowToast(ctx, "Go代理资源不存在，无法切换");
+                                        }
+                                    }
+                                    new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            refreshCategoryContent(ctx);
+                                        }
+                                    }, 3000);
                                 } else if (id.equals("proxy_restart")) {
-                                    // 重启Go代理
-                                    DanmakuSpider.log("用户触发Go代理重启");
-                                    GoProxyManager.isProxyRunning.set(false);
-                                    GoProxyManager.startGoProxyOnce(ctx.getApplicationContext());
-                                    Utils.safeShowToast(ctx, "Go代理重启中，请稍候...");
-                                    // 延迟刷新以显示最新状态
+                                    // 重启代理
+                                    DanmakuSpider.log("用户触发代理重启");
+                                    ProxyManager.restartProxy(ctx.getApplicationContext());
+                                    Utils.safeShowToast(ctx, "代理重启中，请稍候...");
                                     new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
                                         @Override
                                         public void run() {
@@ -330,19 +346,20 @@ public class DanmakuSpider extends Spider {
                     id.equals("silent_mode") ? "静默模式" :
                     id.equals("log") ? "查看日志" : id.equals("lp_config") ? "布局配置" :
                             id.equals("danmaku_style") ? "弹幕 UI 风格" :
-                            id.equals("proxy_status") ? "Go 代理状态" :
-                            id.equals("proxy_restart") ? "重启 Go 代理" : "Leo 弹幕设置");
+                            id.equals("proxy_status") ? "代理状态" :
+                            id.equals("proxy_switch") ? "切换代理" :
+                            id.equals("proxy_restart") ? "重启代理" : "Leo 弹幕设置");
             vod.put("vod_pic", "");
-            String proxyStatus = GoProxyManager.isProxyRunning.get() ? "运行中" : "已停止";
-            String proxyHealth = GoProxyManager.isProxyHealthy() ? "健康" : "异常";
-            String proxyStatusText = GoProxyManager.isProxyRunning.get() ? proxyStatus + " | " + proxyHealth : proxyStatus;
+            String proxyType = ProxyManager.getProxyTypeName();
+            String proxyStatus = ProxyManager.getProxyStatusText();
             vod.put("vod_remarks", id.equals("auto_push") ?
                     (config.isAutoPushEnabled() ? "已开启" : "已关闭") :
                     id.equals("silent_mode") ?
                             (config.isSilentMode() ? "已开启" : "已关闭") :
-                    id.equals("log") ? "弹幕/Go 代理日志" : id.equals("lp_config") ? "调整弹窗大小和透明度" :
+                    id.equals("log") ? "弹幕/代理日志" : id.equals("lp_config") ? "调整弹窗大小和透明度" :
                             id.equals("danmaku_style") ? "当前：" + config.getDanmakuStyle() :
-                            id.equals("proxy_status") ? proxyStatusText :
+                            id.equals("proxy_status") ? proxyType + " | " + proxyStatus :
+                            id.equals("proxy_switch") ? "点击切换代理类型" :
                             id.equals("proxy_restart") ? "点击重启代理服务" : "请稍候...");
             vod.put("vod_play_url", "");
             vod.put("vod_play_from", "");
