@@ -1183,32 +1183,19 @@ public class DanmakuUIHelper {
                         });
 
                         reverseBtn = new Button(activity);
-                        reverseBtn.setText(isReversed ? "倒序" : "正序");
-                        reverseBtn.setTextSize(13);
+                        reverseBtn.setText("\u21BF\u21C2");
+                        reverseBtn.setTextSize(18);
+                        reverseBtn.setTypeface(null, android.graphics.Typeface.BOLD);
                         reverseBtn.setTextColor(TV_TEXT_SECONDARY);
-                        reverseBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
+                        reverseBtn.setBackground(null);
                         reverseBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 60), dpToPx(activity, 50)));
                         reverseBtn.setOnFocusChangeListener(new View.OnFocusChangeListener() {
                             @Override
                             public void onFocusChange(View v, boolean hasFocus) {
-                                Button btn = (Button) v;
-                                boolean isRev = isReversed;
                                 if (hasFocus) {
-                                    if (isTVStyle) {
-                                        btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
-                                        btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_PRIMARY);
-                                        v.setElevation(dpToPx(activity, 4));
-                                        v.setTranslationZ(dpToPx(activity, 2));
-                                    }
-                                    v.setScaleX(1.03f);
-                                    v.setScaleY(1.03f);
+                                    v.setScaleX(1.5f);
+                                    v.setScaleY(1.5f);
                                 } else {
-                                    if (isTVStyle) {
-                                        btn.setBackground(isRev ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
-                                        btn.setTextColor(isRev ? Color.WHITE : TV_TEXT_SECONDARY);
-                                        v.setElevation(0);
-                                        v.setTranslationZ(0);
-                                    }
                                     v.setScaleX(1.0f);
                                     v.setScaleY(1.0f);
                                 }
@@ -1225,6 +1212,17 @@ public class DanmakuUIHelper {
                         LinearLayout.LayoutParams gearParams = new LinearLayout.LayoutParams(dpToPx(activity, 29), dpToPx(activity, gearH));
                         gearParams.setMargins(0, 0, dpToPx(activity, 8), 0);
                         gearBtn.setLayoutParams(gearParams);
+                        gearBtn.setOnFocusChangeListener((v, hasFocus) -> {
+                            if (hasFocus) {
+                                v.setScaleX(1.2f);
+                                v.setScaleY(1.2f);
+                                ((TextView) v).setTextColor(Color.WHITE);
+                            } else {
+                                v.setScaleX(1.0f);
+                                v.setScaleY(1.0f);
+                                ((TextView) v).setTextColor(TV_TEXT_SECONDARY);
+                            }
+                        });
                         gearBtn.setOnClickListener(new View.OnClickListener() {
                             @Override
                             public void onClick(View v) {
@@ -1242,11 +1240,22 @@ public class DanmakuUIHelper {
                         searchLayout.addView(reverseBtn);
                         mainLayout.addView(searchLayout);
                     } else {
-                        reverseBtn = isDarkStyle ?
-                                createDarkSolidButton(activity, isReversed ? "倒序" : "正序", isReversed ? reverseActiveColor : reverseColor) :
-                                createStyledButton(activity, isReversed ? "倒序" : "正序", isReversed ? reverseActiveColor : reverseColor);
+                        reverseBtn = new Button(activity);
+                        reverseBtn.setText("\u21BF\u21C2");
+                        reverseBtn.setTextSize(18);
+                        reverseBtn.setTypeface(null, android.graphics.Typeface.BOLD);
+                        reverseBtn.setTextColor(isDarkStyle ? DARK_TEXT_PRIMARY : TEXT_PRIMARY);
+                        reverseBtn.setBackground(null);
                         reverseBtn.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(activity, 56), dpToPx(activity, 44)));
-                        reverseBtn.setTextSize(14);
+                        reverseBtn.setOnFocusChangeListener((v, hasFocus) -> {
+                            if (hasFocus) {
+                                v.setScaleX(1.5f);
+                                v.setScaleY(1.5f);
+                            } else {
+                                v.setScaleX(1.0f);
+                                v.setScaleY(1.0f);
+                            }
+                        });
 
                         int searchColor;
                         if (style.equals("模板二")) {
@@ -1273,6 +1282,17 @@ public class DanmakuUIHelper {
                         LinearLayout.LayoutParams gearParams = new LinearLayout.LayoutParams(dpToPx(activity, 29), dpToPx(activity, 44));
                         gearParams.setMargins(0, 0, dpToPx(activity, 8), 0);
                         gearBtn.setLayoutParams(gearParams);
+                        gearBtn.setOnFocusChangeListener((v, hasFocus) -> {
+                            if (hasFocus) {
+                                v.setScaleX(1.2f);
+                                v.setScaleY(1.2f);
+                                ((TextView) v).setTextColor(isDarkStyle ? Color.WHITE : PRIMARY_COLOR);
+                            } else {
+                                v.setScaleX(1.0f);
+                                v.setScaleY(1.0f);
+                                ((TextView) v).setTextColor(isDarkStyle ? DARK_TEXT_PRIMARY : TEXT_PRIMARY);
+                            }
+                        });
                         gearBtn.setOnClickListener(new View.OnClickListener() {
                             @Override
                             public void onClick(View v) {
@@ -1324,8 +1344,10 @@ public class DanmakuUIHelper {
                     ScrollView resultScroll = new ScrollView(activity);
                     resultScroll.setBackgroundColor(isDarkStyle ? Color.TRANSPARENT : (isTVStyle ? TV_CARD_BG : BACKGROUND_WHITE));
                     if (isTVStyle) {
-                        android.graphics.drawable.GradientDrawable resultBg = new android.graphics.drawable.GradientDrawable();
-                        resultBg.setColor(TV_CARD_BG);
+                        android.graphics.drawable.GradientDrawable resultBg = new android.graphics.drawable.GradientDrawable(
+                                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                                new int[]{TV_CARD_SECONDARY, TV_CARD_BG}
+                        );
                         resultBg.setCornerRadius(dpToPx(activity, 16));
                         resultScroll.setBackground(resultBg);
                     }
@@ -1352,21 +1374,8 @@ public class DanmakuUIHelper {
                         @Override
                         public void onClick(View v) {
                             isReversed = !isReversed;
-                            if (isTVStyle) {
-                                if (isReversed) {
-                                    reverseBtn.setBackground(createTVGradientDrawable());
-                                    reverseBtn.setTextColor(Color.WHITE);
-                                } else {
-                                    reverseBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
-                                    reverseBtn.setTextColor(TV_TEXT_SECONDARY);
-                                }
-                            } else if (isDarkStyle) {
-                                reverseBtn.setBackground(createRoundedTransparentDrawable(isReversed ? finalReverseActiveColor : reverseColor));
-                            } else {
-                                reverseBtn.setBackground(createRoundedBackgroundDrawable(isReversed ? finalReverseActiveColor : reverseColor));
-                            }
-                            reverseBtn.setText(isReversed ? "倒序" : "正序");
                             showResultsForTab(resultContainer, currentItems, activity, dialog);
+                            reverseBtn.requestFocus();
                         }
                     });
 
@@ -1489,7 +1498,7 @@ public class DanmakuUIHelper {
                                                             v.setScaleY(1.04f);
                                                         } else {
                                                             if (isTVStyle) {
-                                                                v.setBackground(restingColor == finalTabAccent ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
+                                                                v.setBackground(restingColor == finalTabAccent ? createTVGradientDrawable() : createTVDarkGradientDrawable());
                                                                 btn.setTextColor(restingColor == finalTabAccent ? Color.WHITE : TV_TEXT_SECONDARY);
                                                                 applyTVFocusGlow(v, false, restingColor == finalTabAccent);
                                                             } else if (isDarkStyle) {
@@ -1526,7 +1535,7 @@ public class DanmakuUIHelper {
                                                             } else {
                                                                 int inactive = isDarkStyle ? DARK_INACTIVE : GRAY_INACTIVE;
                                                                 if (isTVStyle) {
-                                                                     btn.setBackground(createTVGlassDrawable(TV_CARD_BG));
+                                                                     btn.setBackground(createTVDarkGradientDrawable());
                                                                      btn.setTextColor(TV_TEXT_SECONDARY);
                                                                  } else if (isDarkStyle) {
                                                                     btn.setBackground(createRoundedTransparentDrawable(inactive));
@@ -1562,7 +1571,7 @@ public class DanmakuUIHelper {
                                                     initialColor = containsLastUrl ? finalTabAccent : (isDarkStyle ? DARK_INACTIVE : GRAY_INACTIVE);
                                                 }
                                                 if (isTVStyle) {
-                                                    tabBtn.setBackground(initialColor == finalTabAccent ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
+                                                    tabBtn.setBackground(initialColor == finalTabAccent ? createTVGradientDrawable() : createTVDarkGradientDrawable());
                                                     tabBtn.setTextColor(initialColor == finalTabAccent ? Color.WHITE : TV_TEXT_SECONDARY);
                                                 } else if (isDarkStyle) {
                                                     tabBtn.setBackground(createRoundedTransparentDrawable(initialColor));
@@ -1702,7 +1711,7 @@ public class DanmakuUIHelper {
 
                 if (isTVStyle) {
                     groupBtn.setTextColor(Color.WHITE);
-                    groupBtn.setBackground(groupsWithLastUrl.contains(animeTitle) ? createTVGradientDrawable() : createTVGlassDrawable(TV_CARD_BG));
+                    groupBtn.setBackground(groupsWithLastUrl.contains(animeTitle) ? createTVGradientDrawable() : createTVDarkGradientDrawable());
                 } else if (isDarkStyle) {
                     groupBtn.setTextColor(DARK_TEXT_PRIMARY);
                     if (groupsWithLastUrl.contains(animeTitle)) {
@@ -1815,7 +1824,7 @@ public class DanmakuUIHelper {
                                 groupsWithLastUrl.add(entry.getKey());
                                     } else {
                                         if (isTVStyle) {
-                                    otherBtn.setBackground(createTVGlassDrawable(TV_CARD_BG));
+                                    otherBtn.setBackground(createTVDarkGradientDrawable());
                                     otherBtn.setTextColor(TV_TEXT_SECONDARY);
                                 } else if (isDarkStyle) {
                                     otherBtn.setBackground(createRoundedTransparentDrawable(DARK_BG_SECONDARY));
@@ -2370,7 +2379,7 @@ public class DanmakuUIHelper {
             resultItem.setBackground(createTVGradientDrawable());
             resultItem.setTextColor(Color.WHITE);
         } else {
-            resultItem.setBackground(createTVGlassDrawable(TV_CARD_BG));
+            resultItem.setBackground(createTVDarkGradientDrawable());
             resultItem.setTextColor(TV_TEXT_PRIMARY);
         }
 
@@ -2399,12 +2408,13 @@ public class DanmakuUIHelper {
                 boolean isLastUrl = danmakuUrl != null && danmakuUrl.equals(DanmakuManager.lastDanmakuUrl);
 
                 if (hasFocus) {
-                    android.graphics.drawable.GradientDrawable glow = new android.graphics.drawable.GradientDrawable();
-                    glow.setColor(Color.TRANSPARENT);
-                    glow.setStroke(dpToPx(activity, 2), TV_FOCUS_BLUE);
+                    android.graphics.drawable.GradientDrawable glow = new android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                            new int[]{TV_FOCUS_BLUE, TV_ACCENT}
+                    );
                     glow.setCornerRadius(14);
                     v.setBackground(glow);
-                    ((Button) v).setTextColor(TV_FOCUS_BLUE);
+                    ((Button) v).setTextColor(Color.WHITE);
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                         v.setElevation(dpToPx(activity, 6));
                         v.setTranslationZ(dpToPx(activity, 4));
@@ -2420,7 +2430,7 @@ public class DanmakuUIHelper {
                         v.setBackground(createTVGradientDrawable());
                         ((Button) v).setTextColor(Color.WHITE);
                     } else {
-                        v.setBackground(createTVGlassDrawable(TV_CARD_BG));
+                        v.setBackground(createTVDarkGradientDrawable());
                         ((Button) v).setTextColor(TV_TEXT_PRIMARY);
                     }
                     v.setScaleX(1.0f);
@@ -2777,11 +2787,21 @@ public class DanmakuUIHelper {
     // 创建深色主题实心按钮
     // ====== Premium TV 主题辅助方法 ======
 
-    // TV 渐变高亮背景（蓝绿渐变）
+    // TV 渐变高亮背景（蓝→青渐变）
     private static android.graphics.drawable.GradientDrawable createTVGradientDrawable() {
         android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
                 new int[]{TV_FOCUS_BLUE, TV_ACCENT}
+        );
+        gd.setCornerRadius(20);
+        return gd;
+    }
+
+    // TV 暗色渐变背景（用于非活跃按钮）
+    private static android.graphics.drawable.GradientDrawable createTVDarkGradientDrawable() {
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                new int[]{TV_CARD_SECONDARY, TV_CARD_BG}
         );
         gd.setCornerRadius(20);
         return gd;
