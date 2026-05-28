@@ -19,15 +19,11 @@ move "%~dp0\Smali_classes\smali\com\github\catvod\js" "%~dp0\spider.jar\smali\co
 move "%~dp0\Smali_classes\smali\com\github\catvod\net" "%~dp0\spider.jar\smali\com\github\catvod\"
 move "%~dp0\Smali_classes\smali\org\slf4j" "%~dp0\spider.jar\smali\org\slf4j\"
 
-if exist "%~dp0\assets_bin\" (
-    if not exist "%~dp0\spider.jar\assets\" md "%~dp0\spider.jar\assets\"
-    xcopy "%~dp0\assets_bin" "%~dp0\spider.jar\assets\" /E /I /Y
-)
+if exist "%~dp0\spider.jar\assets" rd /s /q "%~dp0\spider.jar\assets"
+md "%~dp0\spider.jar\assets"
 
-if exist "%~dp0\assets_so\" (
-    if not exist "%~dp0\spider.jar\assets\" md "%~dp0\spider.jar\assets\"
-    xcopy "%~dp0\assets_so" "%~dp0\spider.jar\assets\" /E /I /Y
-)
+if exist "%~dp0\assets_bin\goProxy-arm64" copy /Y "%~dp0\assets_bin\goProxy-arm64" "%~dp0\spider.jar\assets\" >nul
+if exist "%~dp0\assets_bin\goProxy-arm" copy /Y "%~dp0\assets_bin\goProxy-arm" "%~dp0\spider.jar\assets\" >nul
 
 java -jar "%~dp0\3rd\apktool_2.11.0.jar" b "%~dp0\spider.jar" -c
 
