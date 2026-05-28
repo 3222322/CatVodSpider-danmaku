@@ -901,7 +901,9 @@ public class DanmakuUIHelper {
                 copyButton.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        String logContent = DanmakuSpider.getLogContent();
+                        String logContent = currentTab[0] == 1 ?
+                                ProxyManager.getLogContent(isReversed[0]) :
+                                DanmakuSpider.getLogContent(isReversed[0]);
                         if (!TextUtils.isEmpty(logContent)) {
                             android.content.ClipboardManager clipboard = (android.content.ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
                             android.content.ClipData clip = android.content.ClipData.newPlainText("Leo日志", logContent);
