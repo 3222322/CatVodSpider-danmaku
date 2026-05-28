@@ -199,6 +199,7 @@ public class GoProxyManager {
         java.util.LinkedHashSet<Integer> ports = new java.util.LinkedHashSet<>();
         ports.add(currentBackendPort);
         ports.add(DEFAULT_BACKEND_PORT);
+        ports.add(ProxyManager.PROXY_PORT); // 旧端口 5575，二进制可能监听此端口
         for (int i = 0; i < MAX_PORT_SCAN_COUNT; i++) {
             int port = DEFAULT_BACKEND_PORT + i;
             if (port == ProxyManager.JAVA_BACKEND_PORT) continue;
@@ -262,11 +263,42 @@ public class GoProxyManager {
 
             Thread.sleep(3000);
 
-            if (isProxyHealthy()) {
-                log("[二进制] Go代理启动成功");
+            boolean foundHealthy = false;
+            for (int port : buildCandidatePorts()) {
+                boolean httpOk = isProxyHealthy(port);
+                log("[探测] 端口 " + port + " HTTP健康: " + httpOk);
+                if (httpOk) {
+                    currentBackendPort = port;
+                    foundHealthy = true;
+                    break;
+                }
+                boolean tcpOk = isTcpPortOpen(port, 800);
+                log("[探测] 端口 " + port + " TCP连接: " + tcpOk);
+                if (tcpOk) {
+                    currentBackendPort = port;
+                    foundHealthy = true;
+                    break;
+                }
+            }
+            if (foundHealthy) {
+                log("[二进制] Go代理启动成功，端口: " + currentBackendPort);
                 isProxyRunning.set(true);
             } else {
-                log("[二进制] Go代理健康检查失败");
+                log("[二进制] Go代理健康检查失败，候选端口: " + buildCandidatePorts());
+                try {
+                    java.io.File logFile = new java.io.File(context.getCacheDir(), "goproxy_output.log");
+                    if (logFile.exists()) {
+                        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(logFile))) {
+                            String line;
+                            int lineCount = 0;
+                            while ((line = br.readLine()) != null && lineCount < 5) {
+                                log("[二进制输出] " + line);
+                                lineCount++;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
                 isProxyRunning.set(false);
             }
 
@@ -299,6 +331,17 @@ public class GoProxyManager {
             return result.get();
         } else {
             return performHealthCheck(port);
+        }
+    }
+
+    private static boolean isTcpPortOpen(int port, int timeoutMs) {
+        try {
+            java.net.Socket socket = new java.net.Socket();
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), timeoutMs);
+            socket.close();
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 

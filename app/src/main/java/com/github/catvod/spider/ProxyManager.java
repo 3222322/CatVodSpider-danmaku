@@ -108,10 +108,11 @@ public class ProxyManager {
             try {
                 log("[切换] → Go代理");
                 stopHealthCheck();
+                stopJavaProxy();
+                stopRelayServer();
 
                 boolean goStarted = startGoProxySync(context.getApplicationContext());
                 if (goStarted) {
-                    stopJavaProxy();
                     activeProxyType.set(PROXY_TYPE_GO);
                     isProxyRunning.set(true);
                     log("[切换] Go代理启动成功，后端端口: " + GoProxyManager.getCurrentBackendPort());
@@ -137,9 +138,10 @@ public class ProxyManager {
             try {
                 log("[切换] → Java代理");
                 stopHealthCheck();
+                GoProxyManager.killGoProxy();
+                ensureRelayServer();
                 boolean success = startJavaProxy(context.getApplicationContext());
                 if (success) {
-                    GoProxyManager.killGoProxy();
                     saveProxyType(context.getApplicationContext(), PROXY_TYPE_JAVA);
                 }
             } catch (Exception e) {
@@ -160,6 +162,7 @@ public class ProxyManager {
                 stopHealthCheck();
 
                 if (currentType == PROXY_TYPE_GO) {
+                    stopRelayServer();
                     boolean goStarted = startGoProxySync(context.getApplicationContext());
                     if (goStarted) {
                         stopJavaProxy();
@@ -170,6 +173,7 @@ public class ProxyManager {
                     } else {
                         GoProxyManager.killGoProxy();
                         log("[降级] Go代理重启失败，切换到Java代理");
+                        ensureRelayServer();
                         startJavaProxy(context.getApplicationContext());
                     }
                 } else if (currentType == PROXY_TYPE_JAVA) {
@@ -267,6 +271,13 @@ public class ProxyManager {
         if (activeProxyType.get() == PROXY_TYPE_JAVA) {
             activeProxyType.set(PROXY_TYPE_NONE);
             isProxyRunning.set(false);
+        }
+    }
+
+    private static synchronized void stopRelayServer() {
+        if (relayServer != null) {
+            relayServer.stopServer();
+            relayServer = null;
         }
     }
 
@@ -371,6 +382,7 @@ public class ProxyManager {
 
         if (currentType == PROXY_TYPE_GO) {
             GoProxyManager.killGoProxy();
+            stopRelayServer();
             waitForPortReleased();
             boolean goStarted = startGoProxySync(context);
             if (goStarted) {
@@ -384,9 +396,11 @@ public class ProxyManager {
             GoProxyManager.killGoProxy();
             waitForPortReleased();
             log("[降级] Go代理重启失败，切换到Java代理");
+            ensureRelayServer();
             startJavaProxy(context);
         } else if (currentType == PROXY_TYPE_JAVA) {
             log("[重启] Java代理不健康，尝试重启...");
+            ensureRelayServer();
             boolean success = startJavaProxy(context);
             if (!success) {
                 log("[重启] Java代理重启也失败");
