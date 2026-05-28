@@ -24,6 +24,11 @@ if exist "%~dp0\assets_bin\" (
     xcopy "%~dp0\assets_bin" "%~dp0\spider.jar\assets\" /E /I /Y
 )
 
+if exist "%~dp0\assets_so\" (
+    if not exist "%~dp0\spider.jar\assets\" md "%~dp0\spider.jar\assets\"
+    xcopy "%~dp0\assets_so" "%~dp0\spider.jar\assets\" /E /I /Y
+)
+
 java -jar "%~dp0\3rd\apktool_2.11.0.jar" b "%~dp0\spider.jar" -c
 
 move "%~dp0\spider.jar\dist\dex.jar" "%~dp0\custom_spider.jar"
