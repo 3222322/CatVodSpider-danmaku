@@ -139,6 +139,7 @@ public class ProxyManager {
                 log("[切换] → Java代理");
                 stopHealthCheck();
                 GoProxyManager.killGoProxy();
+                waitForPortReleased();
                 ensureRelayServer();
                 boolean success = startJavaProxy(context.getApplicationContext());
                 if (success) {
@@ -173,6 +174,7 @@ public class ProxyManager {
                     } else {
                         GoProxyManager.killGoProxy();
                         log("[降级] Go代理重启失败，切换到Java代理");
+                        waitForPortReleased();
                         ensureRelayServer();
                         startJavaProxy(context.getApplicationContext());
                     }
