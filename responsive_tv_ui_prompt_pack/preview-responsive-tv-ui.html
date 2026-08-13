@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板四 响应式 TV UI 预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0B1020;
+    font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .dialog {
+    background: rgba(19,26,43,0.88);
+    border-radius: 28px;
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    width: 100%;
+    max-width: 960px;
+    padding: 24px 28px;
+    transition: all 0.3s;
+  }
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .search-input {
+    flex: 1;
+    background: #131A2B;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 28px;
+    padding: 14px 24px;
+    color: #E6ECF3;
+    font-size: 15px;
+    outline: none;
+    text-align: center;
+    transition: border-color 0.2s;
+  }
+  .search-input:focus {
+    border-color: #008DFF;
+    box-shadow: 0 0 0 3px rgba(0,141,255,0.15);
+  }
+  .search-input::placeholder { color: #94A3B8; }
+  .btn-accent {
+    background: linear-gradient(135deg, #008DFF, #008DFF);
+    border: none;
+    border-radius: 28px;
+    padding: 14px 32px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-accent:hover, .btn-accent:focus {
+    transform: scale(1.03);
+    box-shadow: 0 4px 20px rgba(0,141,255,0.35);
+    outline: none;
+  }
+  .btn-glass {
+    background: rgba(19,26,43,0.82);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 10px 16px;
+    color: #E6ECF3;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .btn-glass:hover, .btn-glass:focus {
+    background: linear-gradient(135deg, #008DFF, #008DFF);
+    color: #fff;
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(0,141,255,0.3);
+    outline: none;
+  }
+  .btn-glass.active {
+    background: linear-gradient(135deg, #008DFF, #008DFF);
+    color: #fff;
+  }
+  .grid-container {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .ep-group-btn {
+    background: transparent;
+    border: none;
+    color: #94A3B8;
+    font-size: 14px;
+    padding: 8px 0 4px;
+    cursor: pointer;
+    text-align: left;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    width: 100%;
+    transition: color 0.2s;
+  }
+  .ep-group-btn:hover { color: #E6ECF3; }
+  .ep-group-btn .count {
+    color: #008DFF;
+    font-weight: bold;
+  }
+  /* 响应式断点 */
+  @media (min-width: 1400px) {
+    .grid-container { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .dialog { max-width: 1100px; }
+  }
+  @media (min-width: 768px) and (max-width: 1399px) {
+    .grid-container { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  }
+  @media (max-width: 767px) {
+    .grid-container { grid-template-columns: repeat(1, 1fr); gap: 6px; }
+    .dialog { max-width: 100%; padding: 16px; border-radius: 20px; }
+    .search-row { flex-direction: column; }
+    .search-input { width: 100%; text-align: center; }
+    .btn-accent { width: 100%; text-align: center; }
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(0,141,255,0.15);
+    color: #008DFF;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 4px;
+  }
+  .section-label {
+    color: #94A3B8;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin: 16px 0 8px;
+  }
+  .device-indicator {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .device-tag {
+    padding: 4px 16px;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #94A3B8;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .device-tag.active {
+    color: #008DFF;
+    border-color: #008DFF;
+    background: rgba(0,141,255,0.1);
+  }
+</style>
+</head>
+<body>
+
+<div class="dialog">
+  <div class="device-indicator">
+    <span class="device-tag active" id="tag-tv">TV ≥1400px</span>
+    <span class="device-tag" id="tag-tablet">平板 768-1399px</span>
+    <span class="device-tag" id="tag-mobile">手机 ≤767px</span>
+  </div>
+
+  <div class="search-row">
+    <input class="search-input" type="text" placeholder="输入关键词搜索弹幕..." value="鬼灭之刃">
+    <button class="btn-accent">搜索</button>
+  </div>
+
+  <div class="section-label">搜索结果 (3组)</div>
+
+  <!-- 分组1 -->
+  <button class="ep-group-btn" onclick="toggleGrid(this)">
+    鬼灭之刃 无限列车篇 <span class="count">(12集) [-]</span>
+  </button>
+  <div class="grid-container" id="grid1">
+    <button class="btn-glass active">01</button>
+    <button class="btn-glass">02</button>
+    <button class="btn-glass">03</button>
+    <button class="btn-glass">04</button>
+    <button class="btn-glass">05</button>
+    <button class="btn-glass">06</button>
+    <button class="btn-glass">07</button>
+    <button class="btn-glass">08</button>
+    <button class="btn-glass">09</button>
+    <button class="btn-glass">10</button>
+    <button class="btn-glass">11</button>
+    <button class="btn-glass">12</button>
+  </div>
+
+  <!-- 分组2 -->
+  <button class="ep-group-btn" onclick="toggleGrid(this)">
+    鬼灭之刃 游郭篇 <span class="count">(8集) [-]</span>
+  </button>
+  <div class="grid-container" id="grid2">
+    <button class="btn-glass">01</button>
+    <button class="btn-glass">02</button>
+    <button class="btn-glass">03</button>
+    <button class="btn-glass">04</button>
+    <button class="btn-glass">05</button>
+    <button class="btn-glass">06</button>
+    <button class="btn-glass">07</button>
+    <button class="btn-glass">08</button>
+  </div>
+
+  <!-- 分组3 -->
+  <button class="ep-group-btn" onclick="toggleGrid(this)">
+    鬼灭之刃 刀匠村篇 <span class="count">(6集) [-]</span>
+  </button>
+  <div class="grid-container" id="grid3">
+    <button class="btn-glass">01</button>
+    <button class="btn-glass">02</button>
+    <button class="btn-glass">03</button>
+    <button class="btn-glass">04</button>
+    <button class="btn-glass">05</button>
+    <button class="btn-glass">06</button>
+  </div>
+
+  <div style="margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06); text-align:center;">
+    <span class="badge">OLED 暗黑风</span>
+    <span class="badge">#008DFF 蓝色焦点</span>
+    <span class="badge">Glassmorphism</span>
+  </div>
+</div>
+
+<script>
+function toggleGrid(btn) {
+  var grid = btn.nextElementSibling;
+  if (grid && grid.classList.contains('grid-container')) {
+    var hidden = grid.style.display === 'none';
+    grid.style.display = hidden ? 'grid' : 'none';
+    var span = btn.querySelector('.count');
+    if (span) {
+      var num = span.textContent.match(/\d+/);
+      span.textContent = hidden ? '(' + num[0] + '集) [-]\u2003' : '(' + num[0] + '集) [+]\u2003';
+    }
+  }
+}
+// 响应式标签切换模拟
+(function() {
+  var mqTV = window.matchMedia('(min-width: 1400px)');
+  var mqTablet = window.matchMedia('(min-width: 768px) and (max-width: 1399px)');
+  var mqMobile = window.matchMedia('(max-width: 767px)');
+  function updateTags() {
+    document.getElementById('tag-tv').classList.toggle('active', mqTV.matches);
+    document.getElementById('tag-tablet').classList.toggle('active', mqTablet.matches);
+    document.getElementById('tag-mobile').classList.toggle('active', mqMobile.matches);
+  }
+  mqTV.addEventListener('change', updateTags);
+  mqTablet.addEventListener('change', updateTags);
+  mqMobile.addEventListener('change', updateTags);
+  updateTags();
+})();
+</script>
+
+</body>
+</html>
