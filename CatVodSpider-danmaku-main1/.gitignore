@@ -1,0 +1,9 @@
+.gradle
+.idea
+*build
+/local.properties
+jar/danmu.jar
+jar/danmu.jar.md5
+jar/spider.jar/
+修改记录.md
+changelog.js
