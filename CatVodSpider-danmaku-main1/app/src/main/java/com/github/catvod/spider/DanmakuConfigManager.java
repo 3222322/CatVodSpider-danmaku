@@ -9,6 +9,9 @@ import java.util.Set;
 public class DanmakuConfigManager {
     private static final String PREFS_NAME = "danmaku_config";
     private static final String KEY_CONFIG_JSON = "config_json";
+    private static final String KEY_DEFAULT_API_MIGRATED = "default_api_migrated_v1";
+    private static final String KEY_AUTO_ENABLED_MIGRATED = "auto_enabled_migrated_v2";
+    private static final String KEY_AURORA_STYLE_MIGRATED = "aurora_style_migrated_v5";
 
     // 旧的配置键，用于迁移
     private static final String OLD_KEY_API_URLS = "api_urls";
@@ -32,7 +35,29 @@ public class DanmakuConfigManager {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = prefs.getString(KEY_CONFIG_JSON, null);
         if (json != null) {
-            return gson.fromJson(json, DanmakuConfig.class);
+            DanmakuConfig config = normalize(gson.fromJson(json, DanmakuConfig.class));
+            if (!prefs.getBoolean(KEY_DEFAULT_API_MIGRATED, false)) {
+                config.getApiUrls().add(DanmakuConfig.DEFAULT_DANMAKU_API_URL);
+                prefs.edit()
+                        .putString(KEY_CONFIG_JSON, gson.toJson(config))
+                        .putBoolean(KEY_DEFAULT_API_MIGRATED, true)
+                        .apply();
+            }
+            if (!prefs.getBoolean(KEY_AUTO_ENABLED_MIGRATED, false)) {
+                config.setAutoSkipEnabled(true);
+                prefs.edit()
+                        .putString(KEY_CONFIG_JSON, gson.toJson(config))
+                        .putBoolean(KEY_AUTO_ENABLED_MIGRATED, true)
+                        .apply();
+            }
+            if (!prefs.getBoolean(KEY_AURORA_STYLE_MIGRATED, false)) {
+                config.setDanmakuStyle(DanmakuConfig.DEFAULT_DANMAKU_STYLE);
+                prefs.edit()
+                        .putString(KEY_CONFIG_JSON, gson.toJson(config))
+                        .putBoolean(KEY_AURORA_STYLE_MIGRATED, true)
+                        .apply();
+            }
+            return config;
         } else {
             // 迁移旧配置
             return migrateOldConfig(context);
@@ -44,6 +69,20 @@ public class DanmakuConfigManager {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = gson.toJson(config);
         prefs.edit().putString(KEY_CONFIG_JSON, json).apply();
+    }
+
+    private static DanmakuConfig normalize(DanmakuConfig config) {
+        if (config == null) config = new DanmakuConfig();
+        if (config.apiUrls == null) config.apiUrls = new java.util.HashSet<>();
+        if (config.apiUrls.isEmpty()) config.apiUrls.add(DanmakuConfig.DEFAULT_DANMAKU_API_URL);
+        if (config.getTmdbApiKey() == null || config.getTmdbApiKey().trim().isEmpty()) {
+            config.setTmdbApiKey(DanmakuConfig.DEFAULT_TMDB_API_KEY);
+        }
+        if (config.getTmdbLanguage() == null || config.getTmdbLanguage().trim().isEmpty()) {
+            config.setTmdbLanguage("zh-CN");
+        }
+        config.setDanmakuStyle(DanmakuConfig.DEFAULT_DANMAKU_STYLE);
+        return config;
     }
 
     private static DanmakuConfig migrateOldConfig(Context context) {
@@ -74,6 +113,11 @@ public class DanmakuConfigManager {
                 .remove(OLD_KEY_LP_ALPHA)
                 .apply();
         autoPushPrefs.edit().remove(OLD_KEY_AUTO_PUSH).apply();
+        oldPrefs.edit()
+                .putBoolean(KEY_DEFAULT_API_MIGRATED, true)
+                .putBoolean(KEY_AUTO_ENABLED_MIGRATED, true)
+                .putBoolean(KEY_AURORA_STYLE_MIGRATED, true)
+                .apply();
 
         DanmakuSpider.log("旧配置已成功迁移到新格式。");
         return config;

@@ -81,6 +81,7 @@ public class DanmakuScanner {
     private static Runnable delayedPushTask = null;
 
     private static boolean isLeoButtonInjected = false;
+    private static volatile long lastMenuScanLogAt;
 
     // 正则表达式
     private static final Pattern EPISODE_PATTERN = Pattern.compile(
@@ -151,6 +152,15 @@ public class DanmakuScanner {
                             if (isPlayerActivity(className)) {
 //                            DanmakuSpider.log("[Monitor] 检测到播放界面: " + className);
 
+                                ChapterManager.startAutoSkip(act);
+                                mainHandler.post(() -> {
+                                    try {
+                                        syncPlayerToolbar(act);
+                                    } catch (Exception e) {
+                                        DanmakuSpider.log("播放器功能栏同步异常: " + e.getMessage());
+                                    }
+                                });
+
                                 // 注入Leo弹幕按钮0
                                 if (!isLeoButtonInjected) {
                                     mainHandler.post(new Runnable() {
@@ -183,6 +193,7 @@ public class DanmakuScanner {
                                     stopConfirmCount = 0;
                                     // 获取媒体信息
                                     lastEpisodeInfo = getEpisodeInfo(media, act);
+                                    ChapterManager.requestAutoMarkers(act, media);
 
                                     // 视频开始播放
                                     videoPlayStartTime = System.currentTimeMillis();
@@ -1342,7 +1353,7 @@ public class DanmakuScanner {
                 routes += "A";
             }
         } catch (Exception e) {
-            DanmakuSpider.log("[弹幕菜单扫描] 路A失败: " + e);
+            logMenuScanThrottled("[弹幕菜单扫描] 路A失败: " + e);
         }
 
         // 路B: 反射 WindowManagerGlobal.mViews 字段
@@ -1357,7 +1368,7 @@ public class DanmakuScanner {
                 routes += "B";
             }
         } catch (Exception e) {
-            DanmakuSpider.log("[弹幕菜单扫描] 路B失败: " + e);
+            logMenuScanThrottled("[弹幕菜单扫描] 路B失败: " + e);
         }
 
         // 路C: WindowManagerImpl.getDefault().mGlobal.mViews
@@ -1375,7 +1386,7 @@ public class DanmakuScanner {
                 routes += "C";
             }
         } catch (Exception e) {
-            DanmakuSpider.log("[弹幕菜单扫描] 路C失败: " + e);
+            logMenuScanThrottled("[弹幕菜单扫描] 路C失败: " + e);
         }
 
         // 路D: 反射遍历顶层Activity的DialogFragment弹窗（FongMi系 DanmakuDialog 是 BottomSheetDialogFragment）
@@ -1417,7 +1428,7 @@ public class DanmakuScanner {
                 }
             }
         } catch (Exception e) {
-            DanmakuSpider.log("[弹幕菜单扫描] 路D失败: " + e);
+            logMenuScanThrottled("[弹幕菜单扫描] 路D失败: " + e);
         }
 
         // 路E: 兜底Activity根视图
@@ -1435,9 +1446,12 @@ public class DanmakuScanner {
         for (View v : collected) if (v != null) uniq.put(v, Boolean.TRUE);
         java.util.List<View> windowViews = new java.util.ArrayList<>(uniq.keySet());
 
-        DanmakuSpider.log("🔍 [弹幕菜单扫描] 窗口数: " + windowViews.size() + " (路由: " + routes + ")");
+        logMenuScanThrottled("🔍 [弹幕菜单扫描] 窗口数: "
+                + windowViews.size() + " (路由: " + routes + ")");
         for (View root : windowViews) {
-            DanmakuSpider.log("[弹幕菜单扫描] 窗口类: " + (root.getClass().getName()) + " 子数: " + (root instanceof ViewGroup ? ((ViewGroup) root).getChildCount() : 0));
+            logMenuScanThrottled("[弹幕菜单扫描] 窗口类: " + (root.getClass().getName())
+                    + " 子数: " + (root instanceof ViewGroup
+                    ? ((ViewGroup) root).getChildCount() : 0));
             relabelInView(root);
         }
     }
@@ -1458,7 +1472,8 @@ public class DanmakuScanner {
             if (url == null || !text.trim().equalsIgnoreCase(url)) return;
             String label = buildDanmakuLabel(epIdStr);
             if (label == null) {
-                DanmakuSpider.log("[弹幕菜单扫描] 匹配到URL但无法生成标签, epId=" + epIdStr + " 文本: " + text);
+                logMenuScanThrottled("[弹幕菜单扫描] 匹配到URL但无法生成标签, epId="
+                        + epIdStr + " 文本: " + text);
                 return;
             }
             if (!label.equals(text)) {
@@ -1473,6 +1488,13 @@ public class DanmakuScanner {
                 relabelInView(group.getChildAt(i));
             }
         }
+    }
+
+    private static void logMenuScanThrottled(String message) {
+        long now = System.currentTimeMillis();
+        if (now - lastMenuScanLogAt < 60000) return;
+        lastMenuScanLogAt = now;
+        DanmakuSpider.log(message);
     }
 
     // 从文本中提取弹幕epId（多重匹配）
@@ -1563,8 +1585,12 @@ public class DanmakuScanner {
                 return;
             }
 
-            // 遍历视图树寻找合适的锚点按钮
-            traverseForButton(root, 0);
+            TextView nativeDanmaku = findNativeDanmakuButton(root, 0);
+            if (nativeDanmaku != null && nativeDanmaku.getParent() instanceof ViewGroup) {
+                injectButton((ViewGroup) nativeDanmaku.getParent(), nativeDanmaku);
+            } else {
+                traverseForButton(root, 0);
+            }
         } catch (Exception e) {
             DanmakuSpider.log("[按钮注入] 异常: " + e.getMessage());
             e.printStackTrace();
@@ -1612,7 +1638,7 @@ public class DanmakuScanner {
         try {
             View existing = parent.findViewWithTag("danmu_button");
             String anchorText = anchor.getText().toString();
-            boolean isTargetAnchor = anchorText.contains("音轨");
+            boolean isTargetAnchor = anchorText.contains("音轨") || "弹幕".equals(anchorText.trim());
 
             // 逻辑：如果已存在按钮
             if (existing != null) {
@@ -1647,7 +1673,7 @@ public class DanmakuScanner {
 
                 // 修复焦点问题 - 添加必要的焦点设置
                 btn.setFocusable(true);
-                btn.setFocusableInTouchMode(true);
+                btn.setFocusableInTouchMode(false);
                 btn.setClickable(true);
 
                 // 设置背景（使用锚点的背景）
@@ -1656,6 +1682,7 @@ public class DanmakuScanner {
                 } else {
                     btn.setBackgroundColor(Color.parseColor("#4CAF50"));
                 }
+                applyToolbarFocusEffect(btn);
 
                 // 按钮点击事件 - 这是核心注册逻辑
                 btn.setOnClickListener(new View.OnClickListener() {
@@ -1803,6 +1830,357 @@ public class DanmakuScanner {
             DanmakuSpider.log("❌ 注入按钮异常: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private static void syncPlayerToolbar(Activity activity) {
+        if (activity == null || activity.isFinishing()) return;
+        View root = activity.getWindow().getDecorView();
+        if (root == null) return;
+        removeInjectedView(root, "auto_button");
+        removeInjectedView(root, "intro_marker_button");
+        removeInjectedView(root, "outro_marker_button");
+        ensureChapterButton(root);
+        arrangePlayerButtons(root);
+    }
+
+    private static void ensureChapterButton(View root) {
+        if (root == null || root.findViewWithTag("chapter_button") != null) return;
+        View danmuButton = root.findViewWithTag("danmu_button");
+        if (danmuButton != null && danmuButton.getParent() instanceof ViewGroup) {
+            injectChapterButton((ViewGroup) danmuButton.getParent(), danmuButton);
+            return;
+        }
+        TextView nativeDanmaku = findNativeDanmakuButton(root, 0);
+        if (nativeDanmaku != null && nativeDanmaku.getParent() instanceof ViewGroup) {
+            injectChapterButton((ViewGroup) nativeDanmaku.getParent(), nativeDanmaku);
+        }
+    }
+
+    private static void injectChapterButton(ViewGroup parent, View anchor) {
+        if (parent == null || anchor == null || parent.findViewWithTag("chapter_button") != null) return;
+        if (isInRecyclerView(parent)) return;
+        try {
+            TextView chapterButton = createToolbarButton(parent, anchor, "chapter_button", "章节");
+            chapterButton.setOnClickListener(v -> {
+                if (v.getContext() instanceof Activity) {
+                    DanmakuUIHelper.showChapterDialog((Activity) v.getContext(), v);
+                }
+            });
+
+            ViewGroup.LayoutParams params = anchor.getLayoutParams() != null
+                    ? new ViewGroup.LayoutParams(anchor.getLayoutParams())
+                    : new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            View resetButton = findDirectToolbarChildByIdName(parent, "reset");
+            int anchorIndex = parent.indexOfChild(anchor);
+            int insertIndex = resetButton != null
+                    ? parent.indexOfChild(resetButton)
+                    : anchorIndex + 1;
+            parent.addView(chapterButton,
+                    Math.min(Math.max(0, insertIndex), parent.getChildCount()), params);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                chapterButton.setElevation(10f);
+            }
+            parent.requestLayout();
+            DanmakuSpider.log("章节按钮注入成功");
+        } catch (Exception e) {
+            DanmakuSpider.log("章节按钮注入失败: " + e.getMessage());
+        }
+    }
+
+    private static void removeInjectedView(View root, String tag) {
+        View view = root == null ? null : root.findViewWithTag(tag);
+        if (view != null && view.getParent() instanceof ViewGroup) {
+            ((ViewGroup) view.getParent()).removeView(view);
+        }
+    }
+
+    private static TextView findNativeDanmakuButton(View view, int depth) {
+        if (view == null || depth > 15) return null;
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            Object tag = textView.getTag();
+            if ("danmu_button".equals(tag) || "auto_button".equals(tag)
+                    || "chapter_button".equals(tag)) return null;
+            CharSequence value = textView.getText();
+            if ("弹幕".equals(value == null ? "" : value.toString().trim())) return textView;
+            return null;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            if (group.getClass().getName().contains("RecyclerView")) return null;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView found = findNativeDanmakuButton(group.getChildAt(i), depth + 1);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    private static TextView createToolbarButton(ViewGroup parent, View anchor,
+                                                String tag, String text) {
+        TextView button = new TextView(parent.getContext());
+        button.setText(text);
+        button.setTag(tag);
+        if (anchor instanceof TextView) {
+            TextView textAnchor = (TextView) anchor;
+            button.setTextColor(textAnchor.getTextColors());
+            button.setTextSize(0, textAnchor.getTextSize());
+        } else {
+            button.setTextColor(Color.WHITE);
+            button.setTextSize(14);
+        }
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(20, 10, 20, 10);
+        button.setSingleLine(true);
+        button.setFocusable(true);
+        button.setFocusableInTouchMode(false);
+        button.setClickable(true);
+        if (anchor.getBackground() != null && anchor.getBackground().getConstantState() != null) {
+            button.setBackground(anchor.getBackground().getConstantState().newDrawable());
+        }
+        applyToolbarFocusEffect(button);
+        return button;
+    }
+
+    private static void applyToolbarFocusEffect(TextView button) {
+        if (button == null) return;
+        button.setOnFocusChangeListener((v, hasFocus) -> {
+            v.animate().scaleX(hasFocus ? 1.08f : 1f)
+                    .scaleY(hasFocus ? 1.08f : 1f)
+                    .setDuration(120).start();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                v.setElevation(hasFocus ? 14f : 8f);
+            }
+        });
+    }
+
+    private static void arrangePlayerButtons(View root) {
+        TextView nativeDanmaku = findNativeDanmakuButton(root, 0);
+        if (nativeDanmaku == null || !(nativeDanmaku.getParent() instanceof ViewGroup)) return;
+        ViewGroup parent = (ViewGroup) nativeDanmaku.getParent();
+        if (parent.getClass().getName().contains("RecyclerView")
+                || parent.getClass().getName().contains("RelativeLayout")) return;
+
+        List<View> ordered = new ArrayList<>();
+        addToolbarButtonById(parent, ordered, "player", "IJK");
+        addToolbarButtonById(parent, ordered, "decode", "硬解");
+        addToolbarButtonById(parent, ordered, "scale", "原始");
+        addToolbarButton(parent, ordered, null, "danmu_button");
+        addToolbarButtonById(parent, ordered, "danmaku", "弹幕");
+        addToolbarButtonById(parent, ordered, "text", "字幕");
+        addToolbarButtonById(parent, ordered, "opening", "片头");
+        addToolbarButtonById(parent, ordered, "ending", "片尾");
+        addToolbarButtonById(parent, ordered, "audio", "音轨");
+        addToolbarButtonById(parent, ordered, "video", "视轨");
+        addToolbarButtonById(parent, ordered, "speed", "1.00");
+        addToolbarButton(parent, ordered, null, "chapter_button");
+        addToolbarButtonById(parent, ordered, "reset", "刷新");
+        addToolbarButtonById(parent, ordered, "repeat", "循环");
+        ensureTimeButtonWidth(findDirectToolbarChildByIdName(parent, "opening"));
+        ensureTimeButtonWidth(findDirectToolbarChildByIdName(parent, "ending"));
+        if (ordered.size() < 5) return;
+        for (View view : ordered) {
+            view.setFocusableInTouchMode(false);
+        }
+
+        int groupStart = Integer.MAX_VALUE;
+        for (View view : ordered) {
+            if (view.getParent() == parent) groupStart = Math.min(groupStart, parent.indexOfChild(view));
+        }
+        if (groupStart == Integer.MAX_VALUE) groupStart = parent.indexOfChild(nativeDanmaku);
+
+        int horizontalGap = Math.max(1, Math.round(
+                4f * parent.getResources().getDisplayMetrics().density));
+        int expected = groupStart;
+        boolean alreadyOrdered = true;
+        for (View view : ordered) {
+            if (view.getParent() != parent || parent.indexOfChild(view) != expected++) {
+                alreadyOrdered = false;
+                break;
+            }
+        }
+        if (alreadyOrdered) {
+            boolean spacingChanged = false;
+            for (View view : ordered) {
+                spacingChanged |= applyToolbarSpacing(view, horizontalGap);
+            }
+            if (spacingChanged) parent.requestLayout();
+            return;
+        }
+
+        for (View view : ordered) {
+            if (view.getParent() instanceof ViewGroup) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+        }
+        int insertIndex = Math.min(Math.max(0, groupStart), parent.getChildCount());
+        for (View view : ordered) {
+            ViewGroup.LayoutParams params = copyButtonParams(view, nativeDanmaku);
+            applyToolbarSpacing(params, horizontalGap);
+            parent.addView(view, insertIndex++, params);
+        }
+        parent.requestLayout();
+    }
+
+    private static void addToolbarButton(ViewGroup parent, List<View> ordered,
+                                         String text, String tag) {
+        View found = tag != null ? findDirectToolbarChildByTag(parent, tag)
+                : findDirectToolbarChildByText(parent, text);
+        if (found != null && !ordered.contains(found)) ordered.add(found);
+    }
+
+    private static void addToolbarButtonById(ViewGroup parent, List<View> ordered,
+                                             String idName, String fallbackText) {
+        View found = findDirectToolbarChildByIdName(parent, idName);
+        if (found == null && !TextUtils.isEmpty(fallbackText)) {
+            found = findDirectToolbarChildByText(parent, fallbackText);
+        }
+        if (found != null && !ordered.contains(found)) ordered.add(found);
+    }
+
+    private static View findDirectToolbarChildByIdName(ViewGroup parent, String idName) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (hasResourceId(child, idName)) return child;
+        }
+        return null;
+    }
+
+    private static boolean hasResourceId(View view, String idName) {
+        try {
+            if (view.getId() != View.NO_ID
+                    && idName.equals(view.getResources().getResourceEntryName(view.getId()))) {
+                return true;
+            }
+        } catch (Exception ignored) {
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                if (hasResourceId(group.getChildAt(i), idName)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static void ensureTimeButtonWidth(View view) {
+        TextView textView = findTextView(view);
+        if (textView == null) return;
+        CharSequence value = textView.getText();
+        String text = value == null ? "" : value.toString();
+        if (!text.matches("\\d{1,2}:\\d{2}(?::\\d{2})?")) return;
+        String sample = text.indexOf(':', text.indexOf(':') + 1) >= 0 ? "00:00:00" : "00:00";
+        int textWidth = (int) Math.ceil(Math.max(
+                textView.getPaint().measureText(text),
+                textView.getPaint().measureText(sample)));
+        int desired = textWidth + textView.getPaddingLeft() + textView.getPaddingRight()
+                + Math.round(8 * textView.getResources().getDisplayMetrics().density);
+        textView.setSingleLine(true);
+        textView.setEllipsize(null);
+        textView.setMinWidth(desired);
+        textView.setMinimumWidth(desired);
+        ViewGroup.LayoutParams params = textView.getLayoutParams();
+        if (params != null && params.width > 0 && params.width < desired) {
+            params.width = desired;
+            textView.setLayoutParams(params);
+        }
+    }
+
+    private static TextView findTextView(View view) {
+        if (view instanceof TextView) return (TextView) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                TextView textView = findTextView(group.getChildAt(i));
+                if (textView != null) return textView;
+            }
+        }
+        return null;
+    }
+
+    private static View findDirectToolbarChildByTag(ViewGroup parent, String tag) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (tag.equals(child.getTag())) return child;
+        }
+        View root = parent.getRootView();
+        return root == null ? null : root.findViewWithTag(tag);
+    }
+
+    private static View findDirectToolbarChildByText(ViewGroup parent, String target) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (target.equals(extractToolbarText(child))) return child;
+        }
+        return null;
+    }
+
+    private static String extractToolbarText(View view) {
+        if (view instanceof TextView) {
+            CharSequence value = ((TextView) view).getText();
+            return value == null ? "" : value.toString().trim();
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                String text = extractToolbarText(group.getChildAt(i));
+                if (!TextUtils.isEmpty(text)) return text;
+            }
+        }
+        return "";
+    }
+
+    private static ViewGroup.LayoutParams copyButtonParams(View view, View fallback) {
+        ViewGroup.LayoutParams source = view.getLayoutParams();
+        if (source == null) source = fallback.getLayoutParams();
+        if (source instanceof LinearLayout.LayoutParams) {
+            return new LinearLayout.LayoutParams((LinearLayout.LayoutParams) source);
+        }
+        if (source instanceof ViewGroup.MarginLayoutParams) {
+            return new ViewGroup.MarginLayoutParams((ViewGroup.MarginLayoutParams) source);
+        }
+        if (source != null) return new ViewGroup.LayoutParams(source);
+        return new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private static boolean applyToolbarSpacing(View view, int horizontalGap) {
+        if (view == null) return false;
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (params == null || !applyToolbarSpacing(params, horizontalGap)) return false;
+        view.setLayoutParams(params);
+        return true;
+    }
+
+    private static boolean applyToolbarSpacing(ViewGroup.LayoutParams params, int horizontalGap) {
+        boolean changed = false;
+        if (params instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams linearParams = (LinearLayout.LayoutParams) params;
+            if (linearParams.leftMargin != horizontalGap
+                    || linearParams.rightMargin != horizontalGap
+                    || linearParams.topMargin != 0
+                    || linearParams.bottomMargin != 0) {
+                linearParams.setMargins(horizontalGap, 0, horizontalGap, 0);
+                changed = true;
+            }
+            int gravity = (linearParams.gravity & Gravity.HORIZONTAL_GRAVITY_MASK)
+                    | Gravity.CENTER_VERTICAL;
+            if (linearParams.gravity != gravity) {
+                linearParams.gravity = gravity;
+                changed = true;
+            }
+        } else if (params instanceof ViewGroup.MarginLayoutParams) {
+            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
+            if (margins.leftMargin != horizontalGap
+                    || margins.rightMargin != horizontalGap
+                    || margins.topMargin != 0
+                    || margins.bottomMargin != 0) {
+                margins.setMargins(horizontalGap, 0, horizontalGap, 0);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.github.catvod.spider;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -15,14 +16,19 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import com.google.zxing.BarcodeFormat;
@@ -31,6 +37,8 @@ import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.common.BitMatrix;
 import com.github.catvod.spider.entity.DanmakuItem;
 import com.github.catvod.spider.danmu.SharedPreferencesService;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -40,6 +48,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class DanmakuUIHelper {
+    private static volatile boolean chapterDialogLoading;
 
     // 定义统一的颜色常量 - 现代化配色方案
     private static final int PRIMARY_COLOR = 0xFF007AFF;        // 主色调蓝色 - 第一层(页签)
@@ -148,8 +157,177 @@ public class DanmakuUIHelper {
     private static List<DanmakuItem> currentItems = new ArrayList<>();
 
 
-    // 显示配置对话框
     public static void showConfigDialog(Context ctx) {
+        if (!(ctx instanceof Activity)) return;
+        Activity activity = (Activity) ctx;
+        if (activity.isFinishing() || activity.isDestroyed()) return;
+        activity.runOnUiThread(() -> {
+            try {
+                DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+                LinearLayout root = new LinearLayout(activity);
+                root.setOrientation(LinearLayout.VERTICAL);
+                root.setBackgroundColor(BACKGROUND_WHITE);
+                root.setPadding(dpToPx(activity, 18), dpToPx(activity, 16),
+                        dpToPx(activity, 18), dpToPx(activity, 16));
+
+                Button autoButton = createStyledButton(activity,
+                        "Auto 去片头尾：" + (config.isAutoSkipEnabled() ? "已开启" : "已关闭"),
+                        config.isAutoSkipEnabled() ? SUCCESS_COLOR : ACCENT_COLOR);
+                root.addView(autoButton, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44)));
+                autoButton.setOnClickListener(v -> {
+                    config.setAutoSkipEnabled(!config.isAutoSkipEnabled());
+                    DanmakuConfigManager.saveConfig(activity, config);
+                    autoButton.setText("Auto 去片头尾："
+                            + (config.isAutoSkipEnabled() ? "已开启" : "已关闭"));
+                    autoButton.setTextColor(config.isAutoSkipEnabled() ? SUCCESS_COLOR : ACCENT_COLOR);
+                });
+
+                EditText apiInput = createConfigInput(activity,
+                        TextUtils.join("\n", config.getApiUrls()), "每行一个弹幕 API 地址");
+                EditText tmdbInput = createConfigInput(activity,
+                        config.getTmdbApiKey(), "输入 TMDB v3/v4 Key");
+
+                root.addView(createConfigSection(activity, "弹幕 API：", apiInput,
+                        DanmakuSpider.getApiSettingsUrl(), () -> {
+                            String newest = TextUtils.join("\n",
+                                    DanmakuConfigManager.getConfig(activity).getApiUrls());
+                            apiInput.setText(newest);
+                        }, () -> {
+                            Set<String> urls = new HashSet<>();
+                            for (String line : apiInput.getText().toString().split("[\\r\\n,]+")) {
+                                String value = line.trim();
+                                if (value.startsWith("http://") || value.startsWith("https://")) {
+                                    urls.add(value);
+                                }
+                            }
+                            if (urls.isEmpty()) {
+                                Utils.safeShowToast(activity, "请输入有效的弹幕 API");
+                                return;
+                            }
+                            DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                            latest.setApiUrls(urls);
+                            DanmakuConfigManager.saveConfig(activity, latest);
+                            DanmakuSpider.clearCache(activity);
+                            Utils.safeShowToast(activity, "弹幕 API 已保存");
+                        }, () -> apiInput.setText(TextUtils.join("\n", config.getApiUrls()))));
+
+                root.addView(createConfigSection(activity, "TMDB：", tmdbInput,
+                        DanmakuSpider.getTmdbSettingsUrl(), () -> tmdbInput.setText(
+                                DanmakuConfigManager.getConfig(activity).getTmdbApiKey()),
+                        () -> {
+                            String key = tmdbInput.getText().toString().trim();
+                            if (!AutoSkipService.isValidKey(key)) {
+                                Utils.safeShowToast(activity, "TMDB Key 格式不正确");
+                                return;
+                            }
+                            DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                            latest.setTmdbApiKey(key);
+                            latest.setAutoSkipEnabled(true);
+                            DanmakuConfigManager.saveConfig(activity, latest);
+                            AutoSkipService.clearCache(activity);
+                            Utils.safeShowToast(activity, "TMDB Key 已保存");
+                        }, () -> tmdbInput.setText(config.getTmdbApiKey())));
+
+                Button closeButton = createStyledButton(activity, "关闭", ACCENT_COLOR);
+                LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44));
+                closeParams.setMargins(0, dpToPx(activity, 12), 0, 0);
+                root.addView(closeButton, closeParams);
+
+                ScrollView scrollView = new ScrollView(activity);
+                scrollView.addView(root);
+                AlertDialog dialog = new AlertDialog.Builder(activity)
+                        .setTitle("弹幕与 TMDB 设置")
+                        .setView(scrollView)
+                        .create();
+                closeButton.setOnClickListener(v -> dialog.dismiss());
+                safeShowDialog(activity, dialog);
+            } catch (Exception e) {
+                DanmakuSpider.log("显示配置对话框失败: " + e.getMessage());
+            }
+        });
+    }
+
+    private static EditText createConfigInput(Activity activity, String value, String hint) {
+        EditText input = new EditText(activity);
+        input.setText(value);
+        input.setHint(hint);
+        input.setTextSize(13);
+        input.setTextColor(TEXT_PRIMARY);
+        input.setHintTextColor(TEXT_TERTIARY);
+        input.setBackgroundColor(BACKGROUND_WHITE);
+        input.setPadding(dpToPx(activity, 10), dpToPx(activity, 9),
+                dpToPx(activity, 10), dpToPx(activity, 9));
+        input.setSingleLine(false);
+        input.setMaxLines(4);
+        input.setSelectAllOnFocus(false);
+        return input;
+    }
+
+    private static View createConfigSection(Activity activity, String label, EditText input,
+                                            String qrUrl, Runnable onQrChanged,
+                                            Runnable onSave, Runnable onCancel) {
+        LinearLayout section = new LinearLayout(activity);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setPadding(dpToPx(activity, 12), dpToPx(activity, 10),
+                dpToPx(activity, 12), dpToPx(activity, 10));
+        section.setBackgroundColor(0xFFF7F8FA);
+        LinearLayout.LayoutParams sectionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        sectionParams.setMargins(0, dpToPx(activity, 10), 0, 0);
+        section.setLayoutParams(sectionParams);
+
+        TextView title = new TextView(activity);
+        title.setText(label);
+        title.setTextSize(15);
+        title.setTextColor(TEXT_PRIMARY);
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        title.setPadding(0, 0, 0, dpToPx(activity, 6));
+        section.addView(title);
+
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        inputParams.setMargins(0, 0, dpToPx(activity, 8), 0);
+        row.addView(input, inputParams);
+
+        Button qrButton = createStyledButton(activity, "▦", PRIMARY_COLOR);
+        qrButton.setTextSize(23);
+        qrButton.setContentDescription("扫码输入");
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(
+                dpToPx(activity, 48), dpToPx(activity, 48));
+        row.addView(qrButton, qrParams);
+        qrButton.setOnClickListener(v -> {
+            if (TextUtils.isEmpty(qrUrl)) {
+                Utils.safeShowToast(activity, "局域网服务未启动");
+                return;
+            }
+            showQRCodeDialog(activity, qrUrl, onQrChanged);
+        });
+        section.addView(row);
+
+        LinearLayout actionRow = new LinearLayout(activity);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                0, dpToPx(activity, 42), 1f);
+        actionParams.setMargins(dpToPx(activity, 4), dpToPx(activity, 8),
+                dpToPx(activity, 4), 0);
+        Button save = createStyledButton(activity, "保存", PRIMARY_COLOR);
+        Button cancel = createStyledButtonWithBorder(activity, "取消", PRIMARY_COLOR);
+        save.setOnClickListener(v -> onSave.run());
+        cancel.setOnClickListener(v -> onCancel.run());
+        actionRow.addView(save, actionParams);
+        actionRow.addView(cancel, new LinearLayout.LayoutParams(actionParams));
+        section.addView(actionRow);
+        return section;
+    }
+
+    // 旧配置界面保留为内部实现，避免影响其他历史调用。
+    private static void showLegacyConfigDialog(Context ctx) {
         // 添加检查
         if (!(ctx instanceof Activity)) {
             DanmakuSpider.log("错误：Context不是Activity");
@@ -190,17 +368,89 @@ public class DanmakuUIHelper {
 
                     // 副标题说明
                     TextView subtitle = new TextView(activity);
-                    subtitle.setText("配置弹幕搜索API地址");
+                    subtitle.setText("配置弹幕搜索 API、Auto 与 TMDB Key");
                     subtitle.setTextSize(13);
                     subtitle.setTextColor(TEXT_SECONDARY);
                     subtitle.setGravity(Gravity.CENTER);
                     subtitle.setPadding(0, 0, 0, dpToPx(activity, 16));
                     mainLayout.addView(subtitle);
 
+                    DanmakuConfig quickConfig = DanmakuConfigManager.getConfig(activity);
+                    Button autoButton = createStyledButton(activity,
+                            "Auto 去片头尾：" + (quickConfig.isAutoSkipEnabled() ? "已开启" : "已关闭"),
+                            quickConfig.isAutoSkipEnabled() ? SUCCESS_COLOR : ACCENT_COLOR);
+                    LinearLayout.LayoutParams autoButtonParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44));
+                    autoButtonParams.setMargins(0, 0, 0, dpToPx(activity, 8));
+                    autoButton.setLayoutParams(autoButtonParams);
+                    autoButton.setOnClickListener(v -> {
+                        quickConfig.setAutoSkipEnabled(!quickConfig.isAutoSkipEnabled());
+                        DanmakuConfigManager.saveConfig(activity, quickConfig);
+                        autoButton.setText("Auto 去片头尾："
+                                + (quickConfig.isAutoSkipEnabled() ? "已开启" : "已关闭"));
+                        autoButton.setTextColor(quickConfig.isAutoSkipEnabled()
+                                ? SUCCESS_COLOR : ACCENT_COLOR);
+                    });
+                    mainLayout.addView(autoButton);
+
+                    Button qrApiButton = createStyledButton(activity, "扫码填写弹幕搜索 API", PRIMARY_COLOR);
+                    LinearLayout.LayoutParams qrApiParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44));
+                    qrApiParams.setMargins(0, 0, 0, dpToPx(activity, 8));
+                    qrApiButton.setLayoutParams(qrApiParams);
+                    qrApiButton.setOnClickListener(v -> {
+                        String url = DanmakuSpider.getApiSettingsUrl();
+                        if (TextUtils.isEmpty(url)) {
+                            Utils.safeShowToast(activity, "局域网配置服务未启动");
+                            return;
+                        }
+                        showQRCodeDialog(activity, url);
+                    });
+                    mainLayout.addView(qrApiButton);
+
+                    TextView tmdbStatus = new TextView(activity);
+                    tmdbStatus.setText("TMDB Key：" + AutoSkipService.maskKey(quickConfig.getTmdbApiKey())
+                            + " · " + AutoSkipService.getKeyTypeLabel(quickConfig.getTmdbApiKey()));
+                    tmdbStatus.setTextSize(12);
+                    tmdbStatus.setTextColor(TEXT_SECONDARY);
+                    tmdbStatus.setGravity(Gravity.CENTER);
+                    tmdbStatus.setPadding(0, 0, 0, dpToPx(activity, 8));
+                    mainLayout.addView(tmdbStatus);
+
+                    EditText tmdbKeyInput = new EditText(activity);
+                    tmdbKeyInput.setHint("输入或粘贴 TMDB Key，留空保持当前");
+                    tmdbKeyInput.setTextSize(13);
+                    tmdbKeyInput.setTextColor(TEXT_PRIMARY);
+                    tmdbKeyInput.setHintTextColor(TEXT_TERTIARY);
+                    tmdbKeyInput.setBackgroundColor(BACKGROUND_WHITE);
+                    tmdbKeyInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 10),
+                            dpToPx(activity, 12), dpToPx(activity, 10));
+                    tmdbKeyInput.setSingleLine(false);
+                    tmdbKeyInput.setMaxLines(2);
+                    LinearLayout.LayoutParams tmdbInputParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    tmdbInputParams.setMargins(0, 0, 0, dpToPx(activity, 8));
+                    tmdbKeyInput.setLayoutParams(tmdbInputParams);
+                    mainLayout.addView(tmdbKeyInput);
+
+                    Button qrKeyButton = createStyledButton(activity, "扫码更换 TMDB Key", ACCENT_COLOR);
+                    LinearLayout.LayoutParams qrKeyParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44));
+                    qrKeyParams.setMargins(0, 0, 0, dpToPx(activity, 12));
+                    qrKeyButton.setLayoutParams(qrKeyParams);
+                    qrKeyButton.setOnClickListener(v -> {
+                        String url = DanmakuSpider.getTmdbSettingsUrl();
+                        if (TextUtils.isEmpty(url)) {
+                            Utils.safeShowToast(activity, "局域网配置服务未启动");
+                            return;
+                        }
+                        showQRCodeDialog(activity, url);
+                    });
+                    mainLayout.addView(qrKeyButton);
+
                     // IP地址提示 - 改进样式
                     TextView ipInfo = new TextView(activity);
-                    String ip = NetworkUtils.getLocalIpAddress();
-//                ipInfo.setText("Web配置: http://" + ip + ":9810");
+                    ipInfo.setText("电视和手机需在同一局域网");
                     ipInfo.setTextSize(13);
                     ipInfo.setTextColor(ACCENT_COLOR);
                     ipInfo.setGravity(Gravity.CENTER);
@@ -272,7 +522,7 @@ public class DanmakuUIHelper {
                     builder.setView(mainLayout);
                     AlertDialog dialog = builder.create();
                     dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
-                            dpToPx(activity, 600)); // 设置固定高度
+                            (int) (activity.getResources().getDisplayMetrics().heightPixels * 0.86f));
 
                     // 按钮事件
                     saveBtn.setOnClickListener(new View.OnClickListener() {
@@ -295,6 +545,15 @@ public class DanmakuUIHelper {
 
                             DanmakuConfig config = DanmakuConfigManager.getConfig( activity);
                             config.setApiUrls(newUrls);
+                            String newTmdbKey = tmdbKeyInput.getText().toString().trim();
+                            if (!TextUtils.isEmpty(newTmdbKey)) {
+                                if (!AutoSkipService.isValidKey(newTmdbKey)) {
+                                    Utils.safeShowToast(activity, "TMDB Key 格式不正确");
+                                    return;
+                                }
+                                config.setTmdbApiKey(newTmdbKey);
+                                AutoSkipService.clearCache(activity);
+                            }
                             DanmakuConfigManager.saveConfig(activity, config);
 
                             Utils.safeShowToast(activity, "配置已保存");
@@ -530,7 +789,7 @@ public class DanmakuUIHelper {
                 mainLayout.addView(title);
 
                 DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
-                String[] styles = {"模板一", "模板二", "模板三", "模板四", "模板五"};
+                String[] styles = {DanmakuConfig.DEFAULT_DANMAKU_STYLE};
                 String currentStyle = config.getDanmakuStyle();
                 
                 AlertDialog dialog = builder.create();
@@ -546,7 +805,7 @@ public class DanmakuUIHelper {
                     styleBtn.setOnClickListener(v -> {
                         config.setDanmakuStyle(style);
                         DanmakuConfigManager.saveConfig(activity, config);
-                        Utils.safeShowToast(activity, "弹幕UI风格已切换为: " + style);
+                        Utils.safeShowToast(activity, "当前仅提供模板五");
                         dialog.dismiss();
                     });
                 }
@@ -2970,7 +3229,1022 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         return resultItem;
     }
 
+    public static void showChapterDialog(Activity activity) {
+        showChapterDialog(activity, null);
+    }
+
+    public static void showChapterDialog(Activity activity, View anchor) {
+        if (activity == null || activity.isFinishing()) return;
+        activity.runOnUiThread(() -> {
+            ChapterManager.startAutoSkip(activity);
+            synchronized (DanmakuUIHelper.class) {
+                if (chapterDialogLoading) return;
+                chapterDialogLoading = true;
+            }
+            final ChapterLoadingSheet loading;
+            try {
+                loading = showChapterLoadingSheet(activity);
+            } catch (Throwable e) {
+                chapterDialogLoading = false;
+                DanmakuSpider.log("显示章节加载侧栏失败: " + e.getMessage());
+                Utils.safeShowToast(activity, "无法打开章节与标记");
+                return;
+            }
+            new Thread(() -> {
+                ChapterManager.MediaInfo media = null;
+                try {
+                    media = ChapterManager.getMediaInfo();
+                } catch (Throwable e) {
+                    DanmakuSpider.log("读取当前章节媒体信息失败: " + e.getMessage());
+                }
+                final ChapterManager.MediaInfo currentMedia = media;
+                activity.runOnUiThread(() -> {
+                    chapterDialogLoading = false;
+                    if (activity.isFinishing() || activity.isDestroyed()) {
+                        loading.dialog.dismiss();
+                        return;
+                    }
+                    if (currentMedia == null) {
+                        loading.message.setText("暂未读取到当前剧集信息");
+                        return;
+                    }
+                    if (!loading.dialog.isShowing()) return;
+                    loading.dialog.dismiss();
+                    ChapterManager.ChapterData data =
+                            ChapterManager.loadData(activity, currentMedia);
+                    showChapterSideSheet(activity, anchor, currentMedia, data);
+                });
+            }, "DanmakuChapterMediaLoader").start();
+        });
+    }
+
+    private static final class ChapterLoadingSheet {
+        final Dialog dialog;
+        final TextView message;
+
+        ChapterLoadingSheet(Dialog dialog, TextView message) {
+            this.dialog = dialog;
+            this.message = message;
+        }
+    }
+
+    private static final class ChapterRow {
+        private static final long AUTO_TOGGLE_POSITION = Long.MIN_VALUE;
+
+        final String title;
+        final long positionMs;
+        final boolean autoToggle;
+
+        ChapterRow(String title, long positionMs) {
+            this(title, positionMs, false);
+        }
+
+        ChapterRow(String title, long positionMs, boolean autoToggle) {
+            this.title = title;
+            this.positionMs = positionMs;
+            this.autoToggle = autoToggle;
+        }
+
+        boolean isClickable() {
+            return autoToggle || positionMs >= 0;
+        }
+    }
+
+    private static final class ChapterAdapter extends RecyclerView.Adapter<ChapterAdapter.Holder> {
+        interface OnChapterClick {
+            void onClick(ChapterRow row);
+        }
+
+        private final Activity activity;
+        private final OnChapterClick listener;
+        private final List<ChapterRow> rows = new ArrayList<>();
+
+        ChapterAdapter(Activity activity, List<ChapterRow> initial, OnChapterClick listener) {
+            this.activity = activity;
+            this.listener = listener;
+            setRows(initial);
+        }
+
+        void setRows(List<ChapterRow> values) {
+            rows.clear();
+            if (values != null) rows.addAll(values);
+            if (rows.isEmpty()) rows.add(new ChapterRow("暂无章节标记", -1));
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public Holder onCreateViewHolder(ViewGroup parent, int viewType) {
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dpToPx(activity, 16), 0, dpToPx(activity, 16), 0);
+            row.setFocusable(true);
+            row.setFocusableInTouchMode(true);
+            row.setClickable(true);
+            row.setBackground(createAuroraIconButtonDrawable(activity));
+
+            TextView title = new TextView(activity);
+            title.setTextColor(AURORA_TEXT);
+            title.setTextSize(auroraSize(activity, 13, 14, 16));
+            title.setSingleLine(true);
+            title.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(title, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+            TextView time = new TextView(activity);
+            time.setTextColor(AURORA_MUTED);
+            time.setTextSize(auroraSize(activity, 12, 13, 15));
+            time.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            row.addView(time, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            row.setOnFocusChangeListener((v, hasFocus) -> {
+                v.setBackground(hasFocus ? createAuroraGridItemFocusedDrawable(activity)
+                        : createAuroraIconButtonDrawable(activity));
+                title.setTextColor(hasFocus ? AURORA_MINT : AURORA_TEXT);
+            });
+            RecyclerView.LayoutParams params = new RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dpToPx(activity, auroraSize(activity, 44, 48, 56)));
+            params.setMargins(dpToPx(activity, 8), dpToPx(activity, 3),
+                    dpToPx(activity, 8), dpToPx(activity, 3));
+            row.setLayoutParams(params);
+            return new Holder(row, title, time);
+        }
+
+        @Override
+        public void onBindViewHolder(Holder holder, int position) {
+            ChapterRow item = rows.get(position);
+            holder.title.setText(item.title);
+            holder.time.setText(item.autoToggle ? "切换"
+                    : item.positionMs >= 0 ? ChapterManager.formatTime(item.positionMs) : "");
+            holder.itemView.setEnabled(item.isClickable());
+            holder.itemView.setAlpha(item.isClickable() ? 1f : 0.6f);
+            holder.itemView.setOnClickListener(v -> {
+                if (item.isClickable() && listener != null) listener.onClick(item);
+            });
+        }
+
+        @Override
+        public int getItemCount() {
+            return rows.size();
+        }
+
+        static final class Holder extends RecyclerView.ViewHolder {
+            final TextView title;
+            final TextView time;
+
+            Holder(View itemView, TextView title, TextView time) {
+                super(itemView);
+                this.title = title;
+                this.time = time;
+            }
+        }
+    }
+
+    private static void showChapterSideSheet(Activity activity, View anchor,
+                                             ChapterManager.MediaInfo media,
+                                             ChapterManager.ChapterData data) {
+        int layoutId = activity.getResources().getIdentifier(
+                "dialog_episode_list", "layout", activity.getPackageName());
+        if (layoutId <= 0) {
+            showChapterScrollSheet(activity, media, data);
+            return;
+        }
+        View content;
+        try {
+            content = LayoutInflater.from(activity).inflate(layoutId, null, false);
+            content.setMinimumWidth(0);
+        } catch (Throwable e) {
+            showChapterScrollSheet(activity, media, data);
+            return;
+        }
+        int recyclerId = activity.getResources().getIdentifier(
+                "recycler", "id", activity.getPackageName());
+        View recyclerView = recyclerId > 0 ? content.findViewById(recyclerId) : null;
+        if (!(recyclerView instanceof RecyclerView)) {
+            showChapterScrollSheet(activity, media, data);
+            return;
+        }
+
+        RecyclerView recycler = (RecyclerView) recyclerView;
+        RecyclerView.LayoutManager layoutManager = createChapterLayoutManager(activity);
+        if (layoutManager == null) {
+            showChapterScrollSheet(activity, media, data);
+            return;
+        }
+        recycler.setLayoutManager(layoutManager);
+        recycler.setHasFixedSize(true);
+        recycler.setItemAnimator(null);
+        recycler.setFocusable(true);
+        recycler.setFocusableInTouchMode(true);
+        recycler.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+
+        final List<ChapterManager.Chapter> nativeRows = new ArrayList<>();
+        Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        FrameLayout wrapper = createChapterSheetWrapper(activity, content, dialog);
+        dialog.setContentView(wrapper);
+        dialog.setCanceledOnTouchOutside(true);
+        final ChapterAdapter[] adapterRef = new ChapterAdapter[1];
+        adapterRef[0] = new ChapterAdapter(activity,
+                buildChapterRows(activity, data, nativeRows), row -> {
+            if (row.autoToggle) {
+                toggleChapterAuto(activity, media, () -> {
+                    adapterRef[0].setRows(buildChapterRows(activity, data, nativeRows));
+                    focusFirstChapterRow(recycler);
+                });
+                return;
+            }
+            boolean ok = ChapterManager.seekTo(row.positionMs);
+            if (ok) dialog.dismiss();
+            else Utils.safeShowToast(activity, "章节跳转失败");
+        });
+        recycler.setAdapter(adapterRef[0]);
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+            window.setDimAmount(0f);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        dialog.show();
+        if (window != null) {
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+        focusFirstChapterRow(recycler);
+
+        new Thread(() -> {
+            List<ChapterManager.Chapter> nativeChapters =
+                    ChapterManager.getNativeChapters(activity);
+            if (nativeChapters.isEmpty()) return;
+            activity.runOnUiThread(() -> {
+                if (dialog.isShowing()) {
+                    nativeRows.clear();
+                    nativeRows.addAll(nativeChapters);
+                    adapterRef[0].setRows(buildChapterRows(activity, data, nativeRows));
+                    focusFirstChapterRow(recycler);
+                }
+            });
+        }, "DanmakuChapterNativeLoader").start();
+    }
+
+    private static void showChapterScrollSheet(Activity activity,
+                                               ChapterManager.MediaInfo media,
+                                               ChapterManager.ChapterData data) {
+        Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCanceledOnTouchOutside(true);
+
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setMinimumWidth(0);
+        root.setBackgroundColor(AURORA_BG);
+        root.setPadding(dpToPx(activity, 18), dpToPx(activity, 20),
+                dpToPx(activity, 18), dpToPx(activity, 16));
+
+        TextView title = new TextView(activity);
+        title.setText("章节与标记");
+        title.setTextColor(AURORA_TEXT);
+        title.setTextSize(auroraSize(activity, 18, 20, 22));
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+
+        TextView subtitle = new TextView(activity);
+        subtitle.setText(media.getDisplayTitle() + "  "
+                + ChapterManager.formatTime(media.positionMs)
+                + " / " + ChapterManager.formatTime(media.durationMs));
+        subtitle.setTextColor(AURORA_MUTED);
+        subtitle.setTextSize(auroraSize(activity, 12, 13, 14));
+        subtitle.setSingleLine(true);
+        subtitle.setPadding(0, dpToPx(activity, 5), 0, dpToPx(activity, 10));
+        root.addView(subtitle);
+
+        ScrollView scrollView = new ScrollView(activity);
+        LinearLayout rows = new LinearLayout(activity);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        rows.setFocusable(true);
+        rows.setFocusableInTouchMode(true);
+        rows.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+        scrollView.addView(rows, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(scrollView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        FrameLayout wrapper = createChapterSheetWrapper(activity, root, dialog);
+        dialog.setContentView(wrapper);
+
+        final List<ChapterManager.Chapter> nativeRows = new ArrayList<>();
+        final Runnable[] refreshRows = new Runnable[1];
+        refreshRows[0] = () -> {
+            populateChapterScrollRows(
+                    activity, rows, dialog, media,
+                    buildChapterRows(activity, data, nativeRows), refreshRows[0]);
+            focusFirstChapterRow(rows);
+        };
+        refreshRows[0].run();
+
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+            window.setDimAmount(0f);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        dialog.show();
+        if (window != null) {
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+        focusFirstChapterRow(rows);
+
+        new Thread(() -> {
+            List<ChapterManager.Chapter> nativeChapters =
+                    ChapterManager.getNativeChapters(activity);
+            if (nativeChapters.isEmpty()) return;
+            activity.runOnUiThread(() -> {
+                if (dialog.isShowing()) {
+                    nativeRows.clear();
+                    nativeRows.addAll(nativeChapters);
+                    refreshRows[0].run();
+                }
+            });
+        }, "DanmakuChapterNativeLoader").start();
+    }
+
+    private static FrameLayout createChapterSheetWrapper(
+            Activity activity, View content, Dialog dialog) {
+        float widthRatio = isAuroraCompact(activity) ? 0.40f
+                : isAuroraTablet(activity) ? 0.50f : 0.34f;
+        int width = Math.max(dpToPx(activity, 160),
+                Math.round(activity.getResources().getDisplayMetrics().widthPixels * widthRatio));
+        FrameLayout wrapper = new FrameLayout(activity);
+        wrapper.setBackgroundColor(Color.TRANSPARENT);
+        wrapper.setOnClickListener(v -> dialog.dismiss());
+        FrameLayout.LayoutParams contentParams = new FrameLayout.LayoutParams(
+                width, WindowManager.LayoutParams.MATCH_PARENT);
+        contentParams.gravity = Gravity.END;
+        wrapper.addView(content, contentParams);
+        return wrapper;
+    }
+
+    private static ChapterLoadingSheet showChapterLoadingSheet(Activity activity) {
+        Dialog dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCanceledOnTouchOutside(true);
+
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(AURORA_BG);
+        root.setPadding(dpToPx(activity, 18), dpToPx(activity, 20),
+                dpToPx(activity, 18), dpToPx(activity, 16));
+
+        TextView title = new TextView(activity);
+        title.setText("章节与标记");
+        title.setTextColor(AURORA_TEXT);
+        title.setTextSize(auroraSize(activity, 18, 20, 22));
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+
+        TextView message = new TextView(activity);
+        message.setText("正在读取当前剧集...");
+        message.setTextColor(AURORA_MUTED);
+        message.setTextSize(auroraSize(activity, 13, 14, 16));
+        message.setGravity(Gravity.CENTER);
+        message.setPadding(0, dpToPx(activity, 20), 0, 0);
+        root.addView(message, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        FrameLayout wrapper = createChapterSheetWrapper(activity, root, dialog);
+        dialog.setContentView(wrapper);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.END);
+            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            window.addFlags(WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+            window.setDimAmount(0f);
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        dialog.show();
+        if (window != null) {
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT);
+        }
+        return new ChapterLoadingSheet(dialog, message);
+    }
+
+    private static void focusFirstChapterRow(ViewGroup container) {
+        if (container == null) return;
+        scheduleChapterRowFocus(container, 60);
+        scheduleChapterRowFocus(container, 220);
+    }
+
+    private static void scheduleChapterRowFocus(ViewGroup container, long delayMs) {
+        container.postDelayed(() -> {
+            if (!container.isShown()
+                    || container.getWindowVisibility() != View.VISIBLE) return;
+            if (container.findFocus() != null) return;
+            for (int i = 0; i < container.getChildCount(); i++) {
+                View child = container.getChildAt(i);
+                if (child != null && child.getVisibility() == View.VISIBLE
+                        && child.isEnabled() && child.isFocusable()) {
+                    child.requestFocus();
+                    return;
+                }
+            }
+            if (container.isFocusable()) container.requestFocus();
+        }, delayMs);
+    }
+
+    private static void toggleChapterAuto(Activity activity, ChapterManager.MediaInfo media,
+                                          Runnable refreshRows) {
+        if (activity == null || activity.isFinishing()) return;
+        DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+        if (config == null) config = new DanmakuConfig();
+        boolean enabled = !config.isAutoSkipEnabled();
+        config.setAutoSkipEnabled(enabled);
+        DanmakuConfigManager.saveConfig(activity, config);
+        ChapterManager.startAutoSkip(activity);
+        if (refreshRows != null) refreshRows.run();
+        Utils.safeShowToast(activity,
+                enabled ? "Auto 去片头尾已开启" : "Auto 去片头尾已关闭");
+    }
+
+    private static void populateChapterScrollRows(Activity activity, LinearLayout container,
+                                                  Dialog dialog,
+                                                  ChapterManager.MediaInfo media,
+                                                  List<ChapterRow> chapterRows,
+                                                  Runnable refreshRows) {
+        container.removeAllViews();
+        if (chapterRows == null || chapterRows.isEmpty()) {
+            TextView empty = new TextView(activity);
+            empty.setText("暂无章节标记");
+            empty.setTextColor(AURORA_MUTED);
+            empty.setTextSize(auroraSize(activity, 13, 14, 15));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dpToPx(activity, 24), 0, dpToPx(activity, 24));
+            container.addView(empty);
+            return;
+        }
+        for (ChapterRow row : chapterRows) {
+            LinearLayout item = new LinearLayout(activity);
+            item.setOrientation(LinearLayout.HORIZONTAL);
+            item.setGravity(Gravity.CENTER_VERTICAL);
+            item.setPadding(dpToPx(activity, 16), 0, dpToPx(activity, 16), 0);
+            item.setFocusable(true);
+            item.setFocusableInTouchMode(true);
+            item.setClickable(true);
+            item.setBackground(createAuroraIconButtonDrawable(activity));
+
+            TextView name = new TextView(activity);
+            name.setText(row.title);
+            name.setTextColor(AURORA_TEXT);
+            name.setTextSize(auroraSize(activity, 14, 15, 17));
+            name.setSingleLine(true);
+            name.setGravity(Gravity.CENTER_VERTICAL);
+            item.addView(name, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+            TextView time = new TextView(activity);
+            time.setText(row.autoToggle ? "切换" : ChapterManager.formatTime(row.positionMs));
+            time.setTextColor(AURORA_MUTED);
+            time.setTextSize(auroraSize(activity, 12, 13, 15));
+            time.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            item.addView(time, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+            item.setOnFocusChangeListener((v, hasFocus) -> {
+                v.setBackground(hasFocus ? createAuroraGridItemFocusedDrawable(activity)
+                        : createAuroraIconButtonDrawable(activity));
+                name.setTextColor(hasFocus ? AURORA_MINT : AURORA_TEXT);
+            });
+            item.setOnClickListener(v -> {
+                if (row.autoToggle) {
+                    toggleChapterAuto(activity, media, refreshRows);
+                    return;
+                }
+                boolean ok = ChapterManager.seekTo(row.positionMs);
+                if (ok) dialog.dismiss();
+                else Utils.safeShowToast(activity, "章节跳转失败");
+            });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dpToPx(activity, auroraSize(activity, 52, 54, 58)));
+            params.setMargins(0, dpToPx(activity, 3), 0, dpToPx(activity, 3));
+            container.addView(item, params);
+        }
+    }
+
+    private static RecyclerView.LayoutManager createChapterLayoutManager(Context context) {
+        try {
+            Class<?> type = Class.forName("androidx.recyclerview.widget.LinearLayoutManager");
+            try {
+                Object value = type.getConstructor(Context.class, int.class, boolean.class)
+                        .newInstance(context, LinearLayoutManager.VERTICAL, false);
+                if (value instanceof RecyclerView.LayoutManager) {
+                    return (RecyclerView.LayoutManager) value;
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
+                Object value = type.getConstructor(Context.class, int.class)
+                        .newInstance(context, LinearLayoutManager.VERTICAL);
+                if (value instanceof RecyclerView.LayoutManager) {
+                    return (RecyclerView.LayoutManager) value;
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
+                Object value = type.getConstructor(Context.class).newInstance(context);
+                if (value instanceof RecyclerView.LayoutManager) {
+                    return (RecyclerView.LayoutManager) value;
+                }
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static List<ChapterRow> buildChapterRows(
+            Context context, ChapterManager.ChapterData data,
+            List<ChapterManager.Chapter> nativeChapters) {
+        List<ChapterRow> rows = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        DanmakuConfig config = DanmakuConfigManager.getConfig(context);
+        rows.add(new ChapterRow("Auto 去片头尾：" +
+                (config != null && config.isAutoSkipEnabled() ? "开" : "关"),
+                ChapterRow.AUTO_TOGGLE_POSITION, true));
+        if (data.introStartMs >= 0) {
+            addChapterRow(rows, seen, "片头开始", data.introStartMs);
+        }
+        if (data.introEndMs > 0) {
+            addChapterRow(rows, seen, "片头结束", data.introEndMs);
+        }
+        if (data.outroStartMs > 0) {
+            addChapterRow(rows, seen, "片尾", data.outroStartMs);
+        }
+        if (nativeChapters != null) {
+            for (ChapterManager.Chapter chapter : nativeChapters) {
+                addChapterRow(rows, seen, chapter.title, chapter.startMs);
+            }
+        }
+        if (data.chapters != null) {
+            for (ChapterManager.Chapter chapter : data.chapters) {
+                addChapterRow(rows, seen, chapter.title, chapter.startMs);
+            }
+        }
+        return rows;
+    }
+
+    private static void addChapterRow(List<ChapterRow> rows, Set<String> seen,
+                                      String title, long positionMs) {
+        if (positionMs < 0) return;
+        String safeTitle = TextUtils.isEmpty(title) ? "章节" : title.trim();
+        String key = positionMs + "|" + safeTitle;
+        if (seen.add(key)) rows.add(new ChapterRow(safeTitle, positionMs));
+    }
+
+    private static void showChapterPanel(Activity activity, View anchor,
+                                         ChapterManager.MediaInfo media,
+                                         ChapterManager.ChapterData data,
+                                         List<ChapterManager.Chapter> nativeChapters) {
+        if (activity == null || activity.isFinishing() || media == null) return;
+        if (anchor == null || anchor.getWindowToken() == null) {
+            showChapterDialogInternal(activity, media);
+            return;
+        }
+
+        List<ChapterManager.Chapter> items = new ArrayList<>();
+        if (data.introStartMs >= 0) {
+            items.add(new ChapterManager.Chapter("marker-intro-start", "片头开始",
+                    data.introStartMs, true));
+        }
+        if (data.introEndMs > 0) {
+            items.add(new ChapterManager.Chapter("marker-intro-end", "片头结束",
+                    data.introEndMs, true));
+        }
+        if (data.outroStartMs > 0) {
+            items.add(new ChapterManager.Chapter("marker-outro", "片尾",
+                    data.outroStartMs, true));
+        }
+        items.addAll(nativeChapters);
+        items.addAll(data.chapters);
+
+        HorizontalScrollView scrollView = new HorizontalScrollView(activity);
+        scrollView.setHorizontalScrollBarEnabled(false);
+        scrollView.setFillViewport(false);
+        scrollView.setClipToPadding(false);
+        scrollView.setPadding(dpToPx(activity, 3), dpToPx(activity, 3),
+                dpToPx(activity, 3), dpToPx(activity, 3));
+        applyFunctionBarBackground(activity, scrollView, anchor);
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        scrollView.addView(row, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+        int popupWidth = Math.max(dpToPx(activity, 180), screenWidth / 2);
+        PopupWindow popup = new PopupWindow(scrollView, popupWidth,
+                ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setFocusable(true);
+        popup.setAnimationStyle(0);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            popup.setElevation(dpToPx(activity, 6));
+        }
+
+        Button firstButton = null;
+        boolean previousWasIntroStart = false;
+        boolean compact = isAuroraCompact(activity);
+        if (items.isEmpty()) {
+            TextView empty = new TextView(activity);
+            empty.setText("暂无章节或片头片尾标记");
+            empty.setTextColor(AURORA_MUTED);
+            empty.setTextSize(auroraSize(activity, 13, 14, 15));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dpToPx(activity, 12), dpToPx(activity, 14),
+                    dpToPx(activity, 12), dpToPx(activity, 14));
+            row.addView(empty);
+        } else {
+            for (ChapterManager.Chapter chapter : items) {
+                String prefix = chapter.id != null && chapter.id.startsWith("marker-") ? "" : "章节 · ";
+                Button item = createChapterPanelItem(activity, anchor, compact,
+                        prefix + chapter.title + "  " + ChapterManager.formatTime(chapter.startMs),
+                        v -> {
+                            boolean ok = ChapterManager.seekTo(chapter.startMs);
+                            if (ok) popup.dismiss();
+                            else Utils.safeShowToast(activity, "章节跳转失败");
+                        });
+                item.setSingleLine(true);
+                int itemMinWidth = dpToPx(activity,
+                        compact ? 96 : auroraSize(activity, 72, 82, 96));
+                int itemHeight = dpToPx(activity,
+                        compact ? 48 : auroraSize(activity, 34, 38, 42));
+                item.setMinWidth(itemMinWidth);
+                int introGap = previousWasIntroStart ? dpToPx(activity, 8) : 0;
+                LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, itemHeight);
+                itemParams.setMargins(dpToPx(activity, 2) + introGap, 0,
+                        dpToPx(activity, 2), 0);
+                row.addView(item, itemParams);
+                if (firstButton == null) firstButton = item;
+                previousWasIntroStart = "marker-intro-start".equals(chapter.id);
+            }
+        }
+
+        int[] location = new int[2];
+        anchor.getLocationOnScreen(location);
+        scrollView.measure(View.MeasureSpec.makeMeasureSpec(popupWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int popupHeight = scrollView.getMeasuredHeight();
+        int desiredLeft = location[0] + anchor.getWidth() / 2 - popupWidth / 2;
+        desiredLeft = Math.max(0, Math.min(desiredLeft, screenWidth - popupWidth));
+        int xOffset = desiredLeft - location[0];
+        Handler handler = new Handler(Looper.getMainLooper());
+        Runnable[] visibilityWatcher = new Runnable[1];
+        visibilityWatcher[0] = () -> {
+            if (!popup.isShowing()) return;
+            if (!anchor.isAttachedToWindow() || !anchor.isShown() || anchor.getAlpha() <= 0.01f) {
+                popup.dismiss();
+                return;
+            }
+            handler.postDelayed(visibilityWatcher[0], 200);
+        };
+        popup.setOnDismissListener(() -> handler.removeCallbacks(visibilityWatcher[0]));
+        popup.showAsDropDown(anchor, xOffset,
+                -popupHeight - dpToPx(activity, 14));
+        handler.postDelayed(visibilityWatcher[0], 200);
+        if (firstButton != null) {
+            Button focusTarget = firstButton;
+            focusTarget.post(focusTarget::requestFocus);
+        }
+    }
+
+    private static Button createChapterPanelItem(Activity activity, View anchor, boolean compact,
+                                                 String text,
+                                                 View.OnClickListener listener) {
+        Button item = new Button(activity);
+        item.setText(text);
+        item.setAllCaps(false);
+        item.setGravity(Gravity.CENTER);
+        item.setSingleLine(true);
+        item.setClickable(true);
+        item.setEnabled(true);
+        item.setFocusable(true);
+        item.setFocusableInTouchMode(true);
+        if (anchor instanceof TextView) {
+            TextView textAnchor = (TextView) anchor;
+            item.setTextColor(textAnchor.getTextColors());
+            item.setTextSize(0, Math.max(textAnchor.getTextSize() * (compact ? 0.88f : 0.78f), 10f));
+        } else {
+            item.setTextColor(AURORA_TEXT);
+            item.setTextSize(auroraSize(activity, 12, 13, 15));
+        }
+        item.setPadding(dpToPx(activity, compact ? 12 : 10), 0,
+                dpToPx(activity, compact ? 12 : 10), 0);
+        if (anchor.getBackground() != null && anchor.getBackground().getConstantState() != null) {
+            item.setBackground(anchor.getBackground().getConstantState().newDrawable().mutate());
+        } else {
+            item.setBackground(createAuroraIconButtonDrawable(activity));
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            item.setElevation(dpToPx(activity, 8));
+        }
+        item.setOnFocusChangeListener((v, hasFocus) -> {
+            v.animate().scaleX(hasFocus ? 1.06f : 1f)
+                    .scaleY(hasFocus ? 1.06f : 1f)
+                    .setDuration(80).start();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                v.setElevation(dpToPx(activity, hasFocus ? 10 : 6));
+            }
+        });
+        item.setOnClickListener(listener);
+        return item;
+    }
+
+    private static void applyFunctionBarBackground(Activity activity, View panel, View anchor) {
+        View current = anchor == null ? null : anchor.getParent() instanceof View
+                ? (View) anchor.getParent() : null;
+        for (int depth = 0; depth < 4 && current != null; depth++) {
+            if (current.getBackground() != null
+                    && current.getBackground().getConstantState() != null) {
+                panel.setBackground(current.getBackground().getConstantState()
+                        .newDrawable().mutate());
+                return;
+            }
+            current = current.getParent() instanceof View ? (View) current.getParent() : null;
+        }
+        android.graphics.drawable.GradientDrawable fallback =
+                new android.graphics.drawable.GradientDrawable();
+        fallback.setColor(0x66000000);
+        fallback.setCornerRadius(dpToPx(activity, auroraSize(activity, 8, 10, 12)));
+        panel.setBackground(fallback);
+    }
+
+    private static void showChapterDialogInternal(Activity activity, ChapterManager.MediaInfo media) {
+        if (activity == null || activity.isFinishing() || media == null) return;
+        ChapterManager.ChapterData data = ChapterManager.loadData(activity, media);
+        List<ChapterManager.Chapter> nativeChapters = ChapterManager.getNativeChapters(activity);
+        List<ChapterManager.Chapter> markers = new ArrayList<>();
+        if (data.introStartMs >= 0) {
+            markers.add(new ChapterManager.Chapter("marker-intro-start", "片头开始",
+                    data.introStartMs, true));
+        }
+        if (data.introEndMs > 0) {
+            markers.add(new ChapterManager.Chapter("marker-intro-end", "片头结束",
+                    data.introEndMs, true));
+        }
+        if (data.outroStartMs > 0) {
+            markers.add(new ChapterManager.Chapter("marker-outro", "片尾",
+                    data.outroStartMs, true));
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(AURORA_BG);
+        root.setPadding(dpToPx(activity, auroraSize(activity, 14, 18, 24)),
+                dpToPx(activity, auroraSize(activity, 12, 16, 20)),
+                dpToPx(activity, auroraSize(activity, 14, 18, 24)),
+                dpToPx(activity, auroraSize(activity, 12, 16, 20)));
+
+        TextView title = new TextView(activity);
+        title.setText("章节与标记");
+        title.setTextColor(AURORA_TEXT);
+        title.setTextSize(auroraSize(activity, 20, 22, 24));
+        title.setTypeface(null, android.graphics.Typeface.BOLD);
+        root.addView(title);
+
+        TextView subtitle = new TextView(activity);
+        subtitle.setText(media.getDisplayTitle() + "\n当前 " + ChapterManager.formatTime(media.positionMs)
+                + " / " + ChapterManager.formatTime(media.durationMs));
+        subtitle.setTextColor(AURORA_MUTED);
+        subtitle.setTextSize(auroraSize(activity, 12, 13, 15));
+        subtitle.setPadding(0, dpToPx(activity, 6), 0, dpToPx(activity, 10));
+        root.addView(subtitle);
+
+        ScrollView scrollView = new ScrollView(activity);
+        LinearLayout list = new LinearLayout(activity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scrollView.addView(list, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 360));
+        scrollParams.setMargins(0, 0, 0, dpToPx(activity, 8));
+        root.addView(scrollView, scrollParams);
+
+        if (nativeChapters.isEmpty() && data.chapters.isEmpty() && markers.isEmpty()) {
+            TextView empty = new TextView(activity);
+            empty.setText("当前没有可跳转的章节或片头片尾标记。");
+            empty.setTextColor(AURORA_MUTED);
+            empty.setTextSize(auroraSize(activity, 13, 14, 16));
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dpToPx(activity, 12), dpToPx(activity, 28),
+                    dpToPx(activity, 12), dpToPx(activity, 28));
+            list.addView(empty);
+        }
+
+        AlertDialog[] dialogHolder = new AlertDialog[1];
+        for (ChapterManager.Chapter marker : markers) {
+            list.addView(createChapterItem(activity, marker, "标记", dialogHolder, null, null));
+        }
+        for (ChapterManager.Chapter chapter : nativeChapters) {
+            list.addView(createChapterItem(activity, chapter, "章节", dialogHolder, null, null));
+        }
+        for (ChapterManager.Chapter chapter : data.chapters) {
+            list.addView(createChapterItem(activity, chapter, "自定义", dialogHolder, media, data));
+        }
+
+        TextView markerInfo = new TextView(activity);
+        markerInfo.setText("片头 " + ChapterManager.formatTime(data.introStartMs) + " → "
+                + ChapterManager.formatTime(data.introEndMs) + "   片尾 "
+                + ChapterManager.formatTime(data.outroStartMs));
+        markerInfo.setTextColor(AURORA_CYAN);
+        markerInfo.setTextSize(auroraSize(activity, 11, 12, 14));
+        markerInfo.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 6));
+        root.addView(markerInfo);
+
+        LinearLayout markerRow = new LinearLayout(activity);
+        markerRow.setOrientation(LinearLayout.HORIZONTAL);
+        markerRow.addView(createChapterActionButton(activity, "片头起", v ->
+                setChapterMarker(activity, media, data, "introStart", dialogHolder)),
+                buttonRowParams(activity));
+        markerRow.addView(createChapterActionButton(activity, "片头止", v ->
+                setChapterMarker(activity, media, data, "introEnd", dialogHolder)),
+                buttonRowParams(activity));
+        markerRow.addView(createChapterActionButton(activity, "片尾起", v ->
+                setChapterMarker(activity, media, data, "outroStart", dialogHolder)),
+                buttonRowParams(activity));
+        root.addView(markerRow);
+
+        LinearLayout toggleRow = new LinearLayout(activity);
+        toggleRow.setOrientation(LinearLayout.HORIZONTAL);
+        toggleRow.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 8));
+        toggleRow.addView(createChapterActionButton(activity,
+                "自动跳片头：" + (data.autoIntro ? "开" : "关"), v -> {
+                    data.autoIntro = !data.autoIntro;
+                    ChapterManager.saveData(activity, media, data);
+                    if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+                    showChapterDialogInternal(activity, media);
+                }), buttonRowParams(activity));
+        toggleRow.addView(createChapterActionButton(activity,
+                "自动跳片尾：" + (data.autoEnding ? "开" : "关"), v -> {
+                    data.autoEnding = !data.autoEnding;
+                    ChapterManager.saveData(activity, media, data);
+                    if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+                    showChapterDialogInternal(activity, media);
+                }), buttonRowParams(activity));
+        root.addView(toggleRow);
+
+        LinearLayout bottomRow = new LinearLayout(activity);
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        bottomRow.addView(createChapterActionButton(activity, "添加当前章节", v ->
+                promptAddChapter(activity, media, data, dialogHolder)), buttonRowParams(activity));
+        bottomRow.addView(createChapterActionButton(activity, "刷新", v -> {
+            if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+            showChapterDialog(activity);
+        }), buttonRowParams(activity));
+        bottomRow.addView(createChapterActionButton(activity, "关闭", v -> {
+            if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+        }), buttonRowParams(activity));
+        root.addView(bottomRow);
+
+        builder.setView(root);
+        AlertDialog dialog = builder.create();
+        dialogHolder[0] = dialog;
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+        }
+        safeShowDialog(activity, dialog);
+    }
+
+    private static View createChapterItem(Activity activity, ChapterManager.Chapter chapter,
+                                          String label, AlertDialog[] dialogHolder,
+                                          ChapterManager.MediaInfo media,
+                                          ChapterManager.ChapterData data) {
+        Button item = createChapterActionButton(activity,
+                label + "  " + chapter.title + "  [" + ChapterManager.formatTime(chapter.startMs) + "]",
+                v -> {
+                    boolean ok = ChapterManager.seekTo(chapter.startMs);
+                    if (dialogHolder[0] != null && ok) dialogHolder[0].dismiss();
+                    if (!ok) Utils.safeShowToast(activity, "章节跳转失败");
+                });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dpToPx(activity, auroraSize(activity, 44, 48, 56)));
+        params.setMargins(0, dpToPx(activity, 4), 0, dpToPx(activity, 4));
+        item.setLayoutParams(params);
+        if (media != null && data != null && chapter.id != null) {
+            item.setOnLongClickListener(v -> {
+                new AlertDialog.Builder(activity)
+                        .setTitle("删除自定义章节")
+                        .setMessage(chapter.title)
+                        .setPositiveButton("删除", (dialog, which) -> {
+                            ChapterManager.deleteCustomChapter(activity, media, data, chapter.id);
+                            if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+                            showChapterDialogInternal(activity, media);
+                        })
+                        .setNegativeButton("取消", null)
+                        .show();
+                return true;
+            });
+        }
+        return item;
+    }
+
+    private static Button createChapterActionButton(Activity activity, String text,
+                                                    View.OnClickListener listener) {
+        Button button = new Button(activity);
+        button.setText(text);
+        button.setTextColor(AURORA_TEXT);
+        button.setTextSize(auroraSize(activity, 12, 13, 15));
+        button.setAllCaps(false);
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        button.setPadding(dpToPx(activity, 8), 0, dpToPx(activity, 8), 0);
+        button.setBackground(createAuroraIconButtonDrawable(activity));
+        button.setFocusable(true);
+        button.setFocusableInTouchMode(true);
+        button.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                v.setBackground(createAuroraGridItemFocusedDrawable(activity));
+                ((Button) v).setTextColor(AURORA_MINT);
+            } else {
+                v.setBackground(createAuroraIconButtonDrawable(activity));
+                ((Button) v).setTextColor(AURORA_TEXT);
+            }
+        });
+        button.setOnClickListener(listener);
+        return button;
+    }
+
+    private static LinearLayout.LayoutParams buttonRowParams(Activity activity) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
+                dpToPx(activity, auroraSize(activity, 40, 44, 50)), 1f);
+        params.setMargins(dpToPx(activity, 3), 0, dpToPx(activity, 3), 0);
+        return params;
+    }
+
+    private static void setChapterMarker(Activity activity, ChapterManager.MediaInfo media,
+                                         ChapterManager.ChapterData data, String type,
+                                         AlertDialog[] dialogHolder) {
+        new Thread(() -> {
+            ChapterManager.MediaInfo current = ChapterManager.getMediaInfo();
+            if (current == null) {
+                activity.runOnUiThread(() ->
+                        Utils.safeShowToast(activity, "无法读取当前播放进度"));
+                return;
+            }
+            ChapterManager.setMarker(activity, media, data, type, current.positionMs);
+            activity.runOnUiThread(() -> {
+                if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+                Utils.safeShowToast(activity, "片头片尾标记已保存");
+                showChapterDialogInternal(activity, media);
+            });
+        }).start();
+    }
+
+    private static void promptAddChapter(Activity activity, ChapterManager.MediaInfo media,
+                                         ChapterManager.ChapterData data,
+                                         AlertDialog[] dialogHolder) {
+        EditText input = new EditText(activity);
+        input.setHint("章节名称");
+        input.setText("自定义章节 " + (data.chapters.size() + 1));
+        input.setTextColor(AURORA_TEXT);
+        input.setHintTextColor(AURORA_MUTED);
+        input.setSingleLine(true);
+        new AlertDialog.Builder(activity)
+                .setTitle("添加当前进度为章节")
+                .setView(input)
+                .setPositiveButton("添加", (dialog, which) -> new Thread(() -> {
+                    ChapterManager.MediaInfo current = ChapterManager.getMediaInfo();
+                    if (current == null) {
+                        activity.runOnUiThread(() ->
+                                Utils.safeShowToast(activity, "无法读取当前播放进度"));
+                        return;
+                    }
+                    ChapterManager.addCustomChapter(activity, media, data,
+                            input.getText().toString(), current.positionMs);
+                    activity.runOnUiThread(() -> {
+                        if (dialogHolder[0] != null) dialogHolder[0].dismiss();
+                        showChapterDialogInternal(activity, media);
+                    });
+                }).start())
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     public static void showQRCodeDialog(Activity activity, String url) {
+        showQRCodeDialog(activity, url, null);
+    }
+
+    public static void showQRCodeDialog(Activity activity, String url, Runnable onDismiss) {
         activity.runOnUiThread(() -> {
             try {
                 AlertDialog.Builder builder = new AlertDialog.Builder(activity);
@@ -2982,14 +4256,23 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 mainLayout.addView(qrCodeView);
 
                 TextView urlView = new TextView(activity);
-                urlView.setText(url);
+                String displayUrl = url;
+                try {
+                    android.net.Uri uri = android.net.Uri.parse(url);
+                    if (!TextUtils.isEmpty(uri.getHost())) {
+                        displayUrl = uri.getScheme() + "://" + uri.getHost()
+                                + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+                    }
+                } catch (Exception ignored) {
+                }
+                urlView.setText(displayUrl);
                 urlView.setTextColor(android.graphics.Color.WHITE);
                 urlView.setGravity(Gravity.CENTER);
                 urlView.setPadding(0, dpToPx(activity, 10), 0, 0);
                 mainLayout.addView(urlView);
 
                 TextView hintView = new TextView(activity);
-                hintView.setText("扫码搜索弹幕");
+                hintView.setText("扫码打开设置页（电视和手机需在同一局域网）");
                 hintView.setTextColor(android.graphics.Color.WHITE);
                 hintView.setGravity(Gravity.CENTER);
                 hintView.setTextSize(14);
@@ -2999,6 +4282,9 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 builder.setView(mainLayout);
                 AlertDialog dialog = builder.create();
                 dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                dialog.setOnDismissListener(d -> {
+                    if (onDismiss != null) onDismiss.run();
+                });
 
                 Bitmap qrBitmap = createQRCodeBitmap(url, dpToPx(activity, 260));
                 if (qrBitmap != null) {

@@ -95,6 +95,18 @@ public class DanmakuSpider extends Spider {
         DanmakuManager.resetAutoSearch();
     }
 
+    public static String getAutoSettingsUrl() {
+        return webServer == null ? "" : webServer.getAutoSettingsUrl();
+    }
+
+    public static String getApiSettingsUrl() {
+        return webServer == null ? "" : webServer.getApiSettingsUrl();
+    }
+
+    public static String getTmdbSettingsUrl() {
+        return webServer == null ? "" : webServer.getTmdbSettingsUrl();
+    }
+
     // 记录弹幕URL
     public static void recordDanmakuUrl(DanmakuItem danmakuItem, boolean isAuto) {
         DanmakuManager.recordDanmakuUrl(danmakuItem, isAuto);
