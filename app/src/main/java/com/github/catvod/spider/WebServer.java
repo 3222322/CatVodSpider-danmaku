@@ -6,21 +6,60 @@ import com.google.gson.Gson;
 import fi.iki.elonen.NanoHTTPD;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
 public class WebServer extends NanoHTTPD {
+
+    // 固定局域网配置 token，避免应用重启后旧二维码立即失效。
+    private static final String SETTINGS_TOKEN = "l7n9c2v4m6q8p1x3";
 
     public WebServer(int port) throws IOException {
         super(port);
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
     }
 
+    public String getAutoSettingsUrl() {
+        return getSettingsBaseUrl() + "/auto-settings";
+    }
+
+    public String getApiSettingsUrl() {
+        return getSettingsBaseUrl() + "/api-settings?token=" + SETTINGS_TOKEN;
+    }
+
+    public String getTmdbSettingsUrl() {
+        return getSettingsBaseUrl() + "/tmdb-settings?token=" + SETTINGS_TOKEN;
+    }
+
+    private String getSettingsBaseUrl() {
+        int port = getListeningPort();
+        if (port < 1) return "";
+        return "http://" + NetworkUtils.getLocalIpAddress() + ":" + port;
+    }
+
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
         if (uri.equals("/")) {
+            return newFixedLengthResponse(getSettingsChooserHtml());
+        } else if (uri.equals("/remote-search")) {
             return newFixedLengthResponse(getHtml());
+        } else if (uri.equals("/auto-settings")) {
+            return newFixedLengthResponse(getSettingsChooserHtml());
+        } else if (uri.equals("/api-settings")) {
+            return newFixedLengthResponse(getApiSettingsHtml(""));
+        } else if (uri.equals("/tmdb-settings")) {
+            return newFixedLengthResponse(getTmdbSettingsHtml(""));
+        } else if (uri.equals("/api-settings/save")) {
+            return handleDanmakuApiSave(session);
+        } else if (uri.equals("/tmdb-settings/save")) {
+            return handleAutoSettingsSave(session);
+        } else if (uri.equals("/auto-settings/api")) {
+            return handleDanmakuApiSave(session);
+        } else if (uri.equals("/auto-settings/save")) {
+            return handleAutoSettingsSave(session);
         } else if (uri.equals("/search")) {
             Map<String, String> params = session.getParms();
             String keyword = params.get("keyword");
@@ -51,6 +90,203 @@ public class WebServer extends NanoHTTPD {
             return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Danmaku not found with given epId.");
         }
         return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found");
+    }
+
+    private Response handleDanmakuApiSave(IHTTPSession session) {
+        try {
+            Map<String, String> files = new HashMap<>();
+            session.parseBody(files);
+            Map<String, String> params = session.getParms();
+            if (!SETTINGS_TOKEN.equals(params.get("token"))) {
+                return newFixedLengthResponse(Response.Status.FORBIDDEN, MIME_HTML,
+                        renderMessagePage("禁止访问", "配置链接已失效，请重新扫码。", false));
+            }
+
+            String raw = params.get("apiUrls");
+            LinkedHashSet<String> urls = new LinkedHashSet<>();
+            if (raw != null) {
+                for (String line : raw.split("[\\r\\n,]+")) {
+                    String value = line.trim();
+                    if (value.startsWith("http://") || value.startsWith("https://")) {
+                        urls.add(value);
+                    }
+                }
+            }
+            if (urls.isEmpty()) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_HTML,
+                        renderMessagePage("API 地址无效",
+                                "请至少填写一个以 http:// 或 https:// 开头的地址。", false));
+            }
+
+            Activity activity = Utils.getTopActivity();
+            if (activity == null) return newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                    MIME_HTML, renderMessagePage("保存失败", "当前应用上下文不可用。", false));
+            DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+            config.setApiUrls(urls);
+            DanmakuConfigManager.saveConfig(activity, config);
+            DanmakuSpider.clearCache(activity);
+            DanmakuSpider.log("弹幕搜索 API 已通过扫码更新，共 " + urls.size() + " 个地址");
+            return newFixedLengthResponse(Response.Status.OK, MIME_HTML,
+                    renderMessagePage("保存成功", "弹幕搜索 API 已保存，缓存已清空。", true));
+        } catch (Exception e) {
+            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_HTML,
+                    renderMessagePage("保存异常", e.getMessage(), false));
+        }
+    }
+
+    private Response handleAutoSettingsSave(IHTTPSession session) {
+        try {
+            Map<String, String> files = new HashMap<>();
+            session.parseBody(files);
+            Map<String, String> params = session.getParms();
+            if (!SETTINGS_TOKEN.equals(params.get("token"))) {
+                return newFixedLengthResponse(Response.Status.FORBIDDEN, MIME_HTML,
+                        renderMessagePage("禁止访问", "配置链接已失效，请重新扫码。", false));
+            }
+
+            String mode = params.get("mode");
+            String key = params.get("key");
+            if ("default".equals(mode)) key = DanmakuConfig.DEFAULT_TMDB_API_KEY;
+            if (!AutoSkipService.isValidKey(key)) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_HTML,
+                        renderMessagePage("Key 格式错误",
+                                "请输入 32 位 TMDB v3 API Key，或以 eyJ 开头的 v4 Token。", false));
+            }
+
+            String testResult = AutoSkipService.testApiKey(key);
+            if (!testResult.contains("成功")) {
+                return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_HTML,
+                        renderMessagePage("TMDB 验证失败", testResult, false));
+            }
+
+            Activity activity = Utils.getTopActivity();
+            if (activity == null) return newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
+                    MIME_HTML, renderMessagePage("保存失败", "当前应用上下文不可用。", false));
+
+            DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+            config.setTmdbApiKey(key);
+            config.setAutoSkipEnabled(true);
+            DanmakuConfigManager.saveConfig(activity, config);
+            AutoSkipService.clearCache(activity);
+            DanmakuSpider.log("TMDB Key 已通过扫码更新: "
+                    + AutoSkipService.maskKey(key)
+                    + " (" + AutoSkipService.getKeyTypeLabel(key) + ")");
+            return newFixedLengthResponse(Response.Status.OK, MIME_HTML,
+                    renderMessagePage("保存成功",
+                            "TMDB Key 已验证并保存，Auto 已开启。电视端无需重启。", true));
+        } catch (Exception e) {
+            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_HTML,
+                    renderMessagePage("保存异常", e.getMessage(), false));
+        }
+    }
+
+    private String getSettingsChooserHtml() {
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<title>猫影视设置</title><style>"
+                + "*{box-sizing:border-box}body{margin:0;background:#101522;color:#eef6ff;"
+                + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:22px}"
+                + ".card{max-width:620px;margin:auto;background:#1a2234;border:1px solid #34425e;"
+                + "border-radius:12px;padding:22px}a{display:block;text-decoration:none;margin-top:14px;"
+                + "padding:16px;border-radius:8px;background:#e67c00;color:#fff;font-weight:700;"
+                + "text-align:center}.blue{background:#2f6fed}p{color:#9fb0cc}</style>"
+                + "</head><body><div class='card'><h1>猫影视设置</h1>"
+                + "<p>请选择要修改的项目。</p><a href='/api-settings'>弹幕搜索 API</a>"
+                + "<a class='blue' href='/tmdb-settings'>TMDB Key</a></div></body></html>";
+    }
+
+    private String getApiSettingsHtml(String message) {
+        Activity activity = Utils.getTopActivity();
+        DanmakuConfig config = activity == null
+                ? new DanmakuConfig() : DanmakuConfigManager.getConfig(activity);
+        StringBuilder apiText = new StringBuilder();
+        for (String apiUrl : config.getApiUrls()) {
+            if (apiText.length() > 0) apiText.append('\n');
+            apiText.append(apiUrl);
+        }
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<title>弹幕搜索 API</title><style>"
+                + "*{box-sizing:border-box}body{margin:0;background:#101522;color:#eef6ff;"
+                + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:22px}"
+                + ".card{max-width:620px;margin:auto;background:#1a2234;border:1px solid #34425e;"
+                + "border-radius:12px;padding:22px}h1{font-size:22px;margin:0 0 8px}"
+                + ".muted{color:#9fb0cc;font-size:14px;line-height:1.6}"
+                + "label{display:block;margin:20px 0 8px;font-weight:600}"
+                + "textarea{width:100%;padding:13px;border-radius:8px;border:1px solid #4a5b79;"
+                + "background:#0d1320;color:#fff;font-size:15px}button{width:100%;margin-top:14px;"
+                + "padding:13px;border:0;border-radius:8px;background:#e67c00;color:#fff;"
+                + "font-size:16px;font-weight:700}.msg{color:#ffcf70}.card a{color:#ffb84d}"
+                + "</style></head><body><div class='card'><h1>弹幕搜索 API</h1>"
+                + "<div class='muted'>每行一个地址，保存后会清空弹幕缓存。</div>"
+                + (message == null || message.isEmpty() ? "" : "<div class='msg'>"
+                + escapeHtml(message) + "</div>")
+                + "<form method='post' action='/api-settings/save?token=" + SETTINGS_TOKEN + "'>"
+                + "<input type='hidden' name='token' value='" + SETTINGS_TOKEN + "'>"
+                + "<label for='apiUrls'>API 地址</label>"
+                + "<textarea id='apiUrls' name='apiUrls' rows='5' spellcheck='false'>"
+                + escapeHtml(apiText.toString()) + "</textarea>"
+                + "<button type='submit'>保存弹幕 API</button></form>"
+                + "<p><a href='/auto-settings'>返回设置目录</a></p></div></body></html>";
+    }
+
+    private String getTmdbSettingsHtml(String message) {
+        Activity activity = Utils.getTopActivity();
+        DanmakuConfig config = activity == null
+                ? new DanmakuConfig() : DanmakuConfigManager.getConfig(activity);
+        String key = config.getTmdbApiKey();
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<title>TMDB Key</title><style>"
+                + "*{box-sizing:border-box}body{margin:0;background:#101522;color:#eef6ff;"
+                + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:22px}"
+                + ".card{max-width:620px;margin:auto;background:#1a2234;border:1px solid #34425e;"
+                + "border-radius:12px;padding:22px}h1{font-size:22px;margin:0 0 8px}"
+                + ".muted{color:#9fb0cc;font-size:14px;line-height:1.6}.ok{color:#35d99b}"
+                + "label{display:block;margin:20px 0 8px;font-weight:600}"
+                + "input{width:100%;padding:13px;border-radius:8px;border:1px solid #4a5b79;"
+                + "background:#0d1320;color:#fff;font-size:15px}button{width:100%;margin-top:14px;"
+                + "padding:13px;border:0;border-radius:8px;background:#e67c00;color:#fff;"
+                + "font-size:16px;font-weight:700}.secondary{background:#40506b}"
+                + ".note{margin-top:16px;padding:12px;background:#0d1320;border-radius:8px;"
+                + "font-size:13px;color:#9fb0cc;line-height:1.6}.msg{color:#ffcf70}"
+                + ".card a{color:#ffb84d}</style></head><body><div class='card'><h1>TMDB Key</h1>"
+                + "<div class='muted'>当前：<span class='ok'>" + escapeHtml(AutoSkipService.maskKey(key))
+                + " · " + escapeHtml(AutoSkipService.getKeyTypeLabel(key)) + "</span></div>"
+                + (message == null || message.isEmpty() ? "" : "<div class='msg'>"
+                + escapeHtml(message) + "</div>")
+                + "<form method='post' action='/tmdb-settings/save?token=" + SETTINGS_TOKEN + "'>"
+                + "<input type='hidden' name='token' value='" + SETTINGS_TOKEN + "'>"
+                + "<label for='key'>更换 TMDB Key</label>"
+                + "<input id='key' name='key' autocomplete='off' spellcheck='false' "
+                + "placeholder='32 位 v3 Key，或 eyJ 开头的 v4 Token'>"
+                + "<button type='submit'>测试并保存</button></form>"
+                + "<form method='post' action='/tmdb-settings/save?token=" + SETTINGS_TOKEN + "'>"
+                + "<input type='hidden' name='token' value='" + SETTINGS_TOKEN + "'>"
+                + "<input type='hidden' name='mode' value='default'>"
+                + "<button class='secondary' type='submit'>恢复内置默认 Key</button></form>"
+                + "<div class='note'>Key 只保存在电视本机配置中。</div>"
+                + "<p><a href='/auto-settings'>返回设置目录</a></p></div></body></html>";
+    }
+
+    private String renderMessagePage(String title, String message, boolean success) {
+        String color = success ? "#35d99b" : "#ff8d8d";
+        return "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<style>body{margin:0;background:#101522;color:#eef6ff;padding:24px;"
+                + "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
+                + ".card{max-width:560px;margin:auto;background:#1a2234;border:1px solid #34425e;"
+                + "border-radius:12px;padding:24px}h1{color:" + color + ";font-size:22px}"
+                + "p{color:#b9c6da;line-height:1.7}a{color:#ffb84d}</style></head><body>"
+                + "<div class='card'><h1>" + escapeHtml(title) + "</h1><p>"
+                + escapeHtml(message == null ? "" : message) + "</p>"
+                + "<a href='/auto-settings'>返回设置目录</a></div></body></html>";
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private String getHtml() {

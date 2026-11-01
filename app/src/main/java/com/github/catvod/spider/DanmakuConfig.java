@@ -10,6 +10,16 @@ import java.util.Set;
  * 弹幕配置实体类
  */
 public class DanmakuConfig {
+    public static final String DEFAULT_DANMAKU_STYLE = "模板五";
+
+    /**
+     * 内置 TMDB v3 API Key。用户可在局域网配置页扫码替换。
+     */
+    public static final String DEFAULT_TMDB_API_KEY = "c2d8bcc1ff01b54ee5039d5b70f2b67e";
+    /**
+     * 内置弹幕搜索 API。用户可在局域网配置页扫码替换。
+     */
+    public static final String DEFAULT_DANMAKU_API_URL = "http://192.168.1.2:9321/87654321";
     /**
      * 弹幕API地址
      */
@@ -39,6 +49,18 @@ public class DanmakuConfig {
      */
     public boolean silentMode;
     /**
+     * Auto 去片头尾开关
+     */
+    public boolean autoSkipEnabled;
+    /**
+     * TMDB v3 API Key 或 v4 Read Access Token
+     */
+    public String tmdbApiKey;
+    /**
+     * TMDB 查询语言
+     */
+    public String tmdbLanguage;
+    /**
      * 代理类型：0=未设置，1=Go代理，2=Java代理
      */
     public int proxyType;
@@ -46,12 +68,16 @@ public class DanmakuConfig {
     public DanmakuConfig() {
         // 设置默认值
         apiUrls = new HashSet<>();
+        apiUrls.add(DEFAULT_DANMAKU_API_URL);
         lpWidth = 0.9f;
         lpHeight = 0.85f;
         lpAlpha = 0.9f;
         autoPushEnabled = false;
-        danmakuStyle = "模板一";
+        danmakuStyle = DEFAULT_DANMAKU_STYLE;
         silentMode = true;
+        autoSkipEnabled = true;
+        tmdbApiKey = DEFAULT_TMDB_API_KEY;
+        tmdbLanguage = "zh-CN";
         proxyType = 1;
     }
 
@@ -77,6 +103,15 @@ public class DanmakuConfig {
         }
         if (json.has("silentMode")) {
             setSilentMode(json.optBoolean("silentMode", silentMode));
+        }
+        if (json.has("autoSkipEnabled")) {
+            setAutoSkipEnabled(json.optBoolean("autoSkipEnabled", autoSkipEnabled));
+        }
+        if (json.has("tmdbApiKey")) {
+            setTmdbApiKey(json.optString("tmdbApiKey", tmdbApiKey));
+        }
+        if (json.has("tmdbLanguage")) {
+            setTmdbLanguage(json.optString("tmdbLanguage", tmdbLanguage));
         }
         if (json.has("proxyType")) {
             setProxyType(json.optInt("proxyType", proxyType));
@@ -124,11 +159,11 @@ public class DanmakuConfig {
     }
 
     public String getDanmakuStyle() {
-        return danmakuStyle;
+        return DEFAULT_DANMAKU_STYLE;
     }
 
     public void setDanmakuStyle(String danmakuStyle) {
-        this.danmakuStyle = danmakuStyle;
+        this.danmakuStyle = DEFAULT_DANMAKU_STYLE;
     }
 
     public boolean isSilentMode() {
@@ -137,6 +172,32 @@ public class DanmakuConfig {
 
     public void setSilentMode(boolean silentMode) {
         this.silentMode = silentMode;
+    }
+
+    public boolean isAutoSkipEnabled() {
+        return autoSkipEnabled;
+    }
+
+    public void setAutoSkipEnabled(boolean autoSkipEnabled) {
+        this.autoSkipEnabled = autoSkipEnabled;
+    }
+
+    public String getTmdbApiKey() {
+        return tmdbApiKey;
+    }
+
+    public void setTmdbApiKey(String tmdbApiKey) {
+        String value = tmdbApiKey == null ? "" : tmdbApiKey.trim();
+        this.tmdbApiKey = value.isEmpty() ? DEFAULT_TMDB_API_KEY : value;
+    }
+
+    public String getTmdbLanguage() {
+        return tmdbLanguage;
+    }
+
+    public void setTmdbLanguage(String tmdbLanguage) {
+        String value = tmdbLanguage == null ? "" : tmdbLanguage.trim();
+        this.tmdbLanguage = value.isEmpty() ? "zh-CN" : value;
     }
 
     public int getProxyType() {
