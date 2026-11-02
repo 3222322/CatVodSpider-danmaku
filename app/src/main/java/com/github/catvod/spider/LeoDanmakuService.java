@@ -16,8 +16,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class LeoDanmakuService {
 
@@ -362,59 +360,14 @@ public class LeoDanmakuService {
 
             // 检查集数匹配（如果是回退模式，跳过集数过滤，只靠标题相似度匹配）
             if (!usedEpisodeFallback && isMatch && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
-                String episodeNum = episodeInfo.getEpisodeNum();
-                try {
-                    int epNum = Integer.parseInt(episodeNum);
-                    if (epNum <= 0 || epNum > 9999) { // 防止过大的集数值
-                        isMatch = false;
-                    } else {
-                        // 定义多种可能的集数格式
-                        String[] formats = {
-                                String.format("第%d集", epNum),
-                                String.format("_%02d", epNum), // 补零格式，如 _01
-                                String.format("_%d", epNum),   // 不补零格式，如 _1
-                                String.format("第%d期", epNum),
-                                String.format("第%02d集", epNum), // 补零格式，如 第01集
-                                String.format("第%02d期", epNum),  // 补零格式，如 第01期
-                                String.format("_%02d", epNum), // 补零格式，如 _01
-                                String.format("_%dd", epNum)  // _1
-                        };
-
-                        boolean matchFound = false;
-                        for (String format : formats) {
-                            if (item.epTitle.contains(format)) {
-                                matchFound = true;
-                                break;
-                            }
-                        }
-                        if (!matchFound) {
-                            // 尝试匹配上下集（±1、±2）
-                            for (int offset = -2; offset <= 2; offset++) {
-                                if (offset == 0) continue;
-                                int adjEp = epNum + offset;
-                                if (adjEp <= 0) continue;
-                                String[] adjFormats = {
-                                    String.format("第%d集", adjEp),
-                                    String.format("_%02d", adjEp),
-                                    String.format("第%d期", adjEp),
-                                };
-                                for (String af : adjFormats) {
-                                    if (item.epTitle.contains(af)) {
-                                        matchFound = true;
-                                        DanmakuSpider.log("  ✅ 匹配到上下集: " + item.epTitle + " (当前集数: " + episodeNum + ", 匹配到: " + adjEp + ")");
-                                        break;
-                                    }
-                                }
-                                if (matchFound) break;
-                            }
-                        }
-                        if (!matchFound) {
-                            DanmakuSpider.log("  ❌ 集数不匹配: " + item.epTitle + " (要求集数: " + episodeNum + ")");
-                            isMatch = false;
-                        }
-                    }
-                } catch (NumberFormatException e) {
-                    DanmakuSpider.log("集数格式错误: " + episodeNum);
+                int targetEpisode = MediaIdentityResolver.parseEpisodeNumber(
+                        episodeInfo.getEpisodeNum());
+                int candidateEpisode = MediaIdentityResolver.parseEpisodeNumber(item.epTitle);
+                if (targetEpisode > 0 && candidateEpisode > 0
+                        && targetEpisode != candidateEpisode) {
+                    DanmakuSpider.log("  ❌ 集数不匹配: " + item.epTitle
+                            + " (要求集数: " + targetEpisode
+                            + ", 候选集数: " + candidateEpisode + ")");
                     isMatch = false;
                 }
             }
@@ -466,8 +419,9 @@ public class LeoDanmakuService {
             } else if (similarity == bestSimilarity && similarity > 0 && episodeInfo.getEpisodeNum() != null
                     && item.epTitle != null) {
                 // 同分时，优先选集数匹配的项（数字比较，避免 "08" vs "第8集" 不匹配）
-                int itemEp = extractEpNumForMatch(item.epTitle);
-                int targetEp = extractEpNumForMatch(episodeInfo.getEpisodeNum());
+                int itemEp = MediaIdentityResolver.parseEpisodeNumber(item.epTitle);
+                int targetEp = MediaIdentityResolver.parseEpisodeNumber(
+                        episodeInfo.getEpisodeNum());
                 if (itemEp > 0 && itemEp == targetEp) {
                     selectedItem = item;
                     bestMatchedName = titleToCompare;
@@ -484,20 +438,6 @@ public class LeoDanmakuService {
 
         return new SearchResult(false, 0, null, null);
     }
-
-    private static int extractEpNumForMatch(String text) {
-        if (text == null) return -1;
-        Matcher m = Pattern.compile("第(\\d+)").matcher(text);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        m = Pattern.compile("[Ee](\\d+)").matcher(text);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        m = Pattern.compile("_(\\d+)").matcher(text);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        m = Pattern.compile("(\\d+)").matcher(text);
-        if (m.find()) return Integer.parseInt(m.group(1));
-        return -1;
-    }
-
 
     private static double calculateSimilarity(String s1, String s2) {
         String longer = s1, shorter = s2;

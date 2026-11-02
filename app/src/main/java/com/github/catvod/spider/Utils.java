@@ -7,6 +7,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
 
+import com.github.catvod.net.OkHttp;
+
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
@@ -14,6 +16,9 @@ import java.util.Map;
 public class Utils {
 
     private static WeakReference<Activity> cachedActivity;
+    private static final Object PORT_LOCK = new Object();
+    private static volatile int cachedHostPort;
+    private static volatile long cachedHostPortAt;
 
     public static Activity getTopActivity() {
         try {
@@ -123,14 +128,61 @@ public class Utils {
     }
 
     public static int getPort() {
-        Class<?> clz = null;
-        int port = 9978;
-        try {
-            clz = Class.forName("com.github.catvod.Proxy");
-            port = (int) clz.getMethod("getPort").invoke(null);
-        } catch (Exception e) {
-            DanmakuSpider.log("❌ 获取代理端口异常: " + e.getMessage());
+        int port = cachedHostPort;
+        if (port > 0 && System.currentTimeMillis() - cachedHostPortAt < 5000) {
+            return port;
         }
-        return port;
+        synchronized (PORT_LOCK) {
+            port = cachedHostPort;
+            if (port > 0 && System.currentTimeMillis() - cachedHostPortAt < 5000) {
+                return port;
+            }
+            int reflected = reflectedPort();
+            if (isHostMediaPort(reflected)) {
+                cachedHostPort = reflected;
+                cachedHostPortAt = System.currentTimeMillis();
+                return reflected;
+            }
+            for (int candidate = 9978; candidate <= 9999; candidate++) {
+                if (candidate == reflected) continue;
+                if (isHostMediaPort(candidate)) {
+                    cachedHostPort = candidate;
+                    cachedHostPortAt = System.currentTimeMillis();
+                    DanmakuSpider.log("检测到宿主 WebServer 端口: " + candidate);
+                    return candidate;
+                }
+            }
+            cachedHostPort = reflected > 0 ? reflected : 9978;
+            cachedHostPortAt = System.currentTimeMillis();
+            return cachedHostPort;
+        }
+    }
+
+    public static void invalidatePort() {
+        synchronized (PORT_LOCK) {
+            cachedHostPort = 0;
+            cachedHostPortAt = 0;
+        }
+    }
+
+    private static int reflectedPort() {
+        try {
+            Class<?> clz = Class.forName("com.github.catvod.Proxy");
+            return (int) clz.getMethod("getPort").invoke(null);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static boolean isHostMediaPort(int port) {
+        if (port <= 0) return false;
+        try {
+            String body = OkHttp.string("http://127.0.0.1:" + port + "/media", 300);
+            if (body == null) return false;
+            String trimmed = body.trim();
+            return trimmed.startsWith("{") && trimmed.endsWith("}");
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 }

@@ -43,14 +43,19 @@ public class WebServer extends NanoHTTPD {
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
         if (uri.equals("/")) {
+            DanmakuUIHelper.dismissQRCodeDialog();
             return newFixedLengthResponse(getSettingsChooserHtml());
         } else if (uri.equals("/remote-search")) {
+            DanmakuUIHelper.dismissQRCodeDialog();
             return newFixedLengthResponse(getHtml());
         } else if (uri.equals("/auto-settings")) {
+            DanmakuUIHelper.dismissQRCodeDialog();
             return newFixedLengthResponse(getSettingsChooserHtml());
         } else if (uri.equals("/api-settings")) {
+            DanmakuUIHelper.dismissQRCodeDialog();
             return newFixedLengthResponse(getApiSettingsHtml(""));
         } else if (uri.equals("/tmdb-settings")) {
+            DanmakuUIHelper.dismissQRCodeDialog();
             return newFixedLengthResponse(getTmdbSettingsHtml(""));
         } else if (uri.equals("/api-settings/save")) {
             return handleDanmakuApiSave(session);
@@ -189,10 +194,12 @@ public class WebServer extends NanoHTTPD {
                 + ".card{max-width:620px;margin:auto;background:#1a2234;border:1px solid #34425e;"
                 + "border-radius:12px;padding:22px}a{display:block;text-decoration:none;margin-top:14px;"
                 + "padding:16px;border-radius:8px;background:#e67c00;color:#fff;font-weight:700;"
-                + "text-align:center}.blue{background:#2f6fed}p{color:#9fb0cc}</style>"
-                + "</head><body><div class='card'><h1>猫影视设置</h1>"
-                + "<p>请选择要修改的项目。</p><a href='/api-settings'>弹幕搜索 API</a>"
-                + "<a class='blue' href='/tmdb-settings'>TMDB Key</a></div></body></html>";
+                + "text-align:center}.blue{background:#2f6fed}.green{background:#238b63}p{color:#9fb0cc}</style>"
+                + "</head><body><div class='card'><h1>弹幕工具</h1>"
+                + "<p>搜索并推送弹幕，或修改相关配置。</p>"
+                + "<a href='/remote-search'>弹幕搜索</a>"
+                + "<a class='blue' href='/api-settings'>弹幕搜索 API</a>"
+                + "<a class='green' href='/tmdb-settings'>TMDB Key</a></div></body></html>";
     }
 
     private String getApiSettingsHtml(String message) {
@@ -314,8 +321,8 @@ public class WebServer extends NanoHTTPD {
                 "<div class='container'>" +
                 "<h1>弹幕搜索</h1>" +
                 "<div class='search-box'>" +
-                "<button id='searchBtn' onclick='search()'>搜索</button>" +
                 "<input type='text' id='keyword' placeholder='输入关键词搜索弹幕...'>" +
+                "<button id='searchBtn' onclick='search()'>搜索</button>" +
                 "<button id='reverseBtn' onclick='toggleOrder()'>正序</button>" +
                 "</div>" +
                 "<div class='tab-container' id='tabContainer'></div>" +

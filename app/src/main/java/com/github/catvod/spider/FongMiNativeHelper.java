@@ -1,11 +1,14 @@
 package com.github.catvod.spider;
 
 import android.app.Activity;
+import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.Looper;
-import android.widget.TextView;
+
+import com.github.catvod.spider.entity.Media;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -62,16 +65,21 @@ final class FongMiNativeHelper {
                 : findObjectsByTypeName(activity, "com.fongmi.android.tv.bean.History", 4);
         for (Object history : histories) {
             try {
-                history.getClass().getMethod("setOpening", long.class)
-                        .invoke(history, Math.max(0, opening));
-                history.getClass().getMethod("setEnding", long.class)
-                        .invoke(history, Math.max(0, ending));
-                history.getClass().getMethod("save").invoke(history);
+                long normalizedOpening = Math.max(0, opening);
+                long normalizedEnding = Math.max(0, ending);
+                long currentOpening = getLong(history, "getOpening");
+                long currentEnding = getLong(history, "getEnding");
+                if (currentOpening != normalizedOpening || currentEnding != normalizedEnding) {
+                    history.getClass().getMethod("setOpening", long.class)
+                            .invoke(history, normalizedOpening);
+                    history.getClass().getMethod("setEnding", long.class)
+                            .invoke(history, normalizedEnding);
+                    history.getClass().getMethod("save").invoke(history);
+                }
                 changed = true;
             } catch (Throwable ignored) {
             }
         }
-        updateHistoryButtons(activity, opening, ending);
         return changed;
     }
 
@@ -149,6 +157,38 @@ final class FongMiNativeHelper {
         });
     }
 
+    static ChapterManager.MediaInfo getMediaInfo(Activity activity) {
+        Media media = getMedia(activity);
+        return media == null ? null : ChapterManager.fromMedia(media);
+    }
+
+    static Media getMedia(Activity activity) {
+        MediaController controller = getMediaController(activity);
+        if (controller == null) return null;
+        try {
+            MediaMetadata metadata = controller.getMetadata();
+            PlaybackState state = controller.getPlaybackState();
+            if (metadata == null) return null;
+            String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
+            String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
+            String url = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_URI);
+            long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
+            long position = state == null ? 0 : state.getPosition();
+            if (title == null && artist == null) return null;
+            Media media = new Media();
+            media.setTitle(title);
+            media.setArtist(artist);
+            media.setUrl(url == null || url.isEmpty()
+                    ? "mediasession://current" : url);
+            media.setDuration(duration);
+            media.setPosition(position);
+            media.setState(state == null ? 3 : state.getState());
+            return media;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private interface MainAction {
         boolean run();
     }
@@ -176,7 +216,11 @@ final class FongMiNativeHelper {
     }
 
     private static MediaController.TransportControls getTransportControls() {
-        Activity activity = ChapterManagerActivityHolder.get();
+        MediaController controller = getMediaController(ChapterManagerActivityHolder.get());
+        return controller == null ? null : controller.getTransportControls();
+    }
+
+    private static MediaController getMediaController(Activity activity) {
         if (activity == null) return null;
         Object playbackService = findFieldByTypeName(activity, "PlaybackService");
         Object session = playbackService == null ? null
@@ -188,25 +232,9 @@ final class FongMiNativeHelper {
         }
         if (!(session instanceof MediaSession)) return null;
         try {
-            MediaController controller = ((MediaSession) session).getController();
-            return controller == null ? null : controller.getTransportControls();
+            return ((MediaSession) session).getController();
         } catch (Throwable e) {
             return null;
-        }
-    }
-
-    private static void updateHistoryButtons(Activity activity, long opening, long ending) {
-        updateButtonText(activity, "opening", "片头", opening);
-        updateButtonText(activity, "ending", "片尾", ending);
-    }
-
-    private static void updateButtonText(Activity activity, String idName,
-                                         String fallback, long value) {
-        int id = activity.getResources().getIdentifier(idName, "id", activity.getPackageName());
-        if (id <= 0) return;
-        TextView textView = activity.findViewById(id);
-        if (textView != null) {
-            textView.setText(value > 0 ? ChapterManager.formatTime(value) : fallback);
         }
     }
 

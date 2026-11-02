@@ -19,15 +19,13 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Auto 去片头尾：TMDB 负责解析剧集，IntroDB/AniSkip 负责提供时间点。
  */
 public final class AutoSkipService {
 
-    private static final String PREFS_NAME = "danmaku_auto_skip_cache_v4";
+    private static final String PREFS_NAME = "danmaku_auto_skip_cache_v5";
     private static final String TMDB_BASE = "https://api.themoviedb.org/3";
     private static final String TMDB_FALLBACK_BASE = "https://api.tmdb.org/3";
     private static final String INTRODB_SEGMENTS = "https://api.introdb.app/segments";
@@ -47,31 +45,12 @@ public final class AutoSkipService {
             Collections.newSetFromMap(new ConcurrentHashMap<>());
     private static volatile long lastCachePruneAt;
 
-    private static final Pattern SEASON_EPISODE_PATTERN = Pattern.compile(
-            "(?i)(?<![A-Za-z0-9])(?:S(?:eason)?\\s*(\\d{1,2}))?[ ._-]*"
-                    + "E(?:P(?:ISODE)?)?\\s*(\\d{1,4})(?![0-9])");
-    private static final Pattern SEASON_PATTERN = Pattern.compile(
-            "(?:第\\s*([0-9零一二三四五六七八九十]+)\\s*季)|(?i)(?:S|SEASON)\\s*(\\d{1,2})");
-    private static final Pattern EPISODE_PATTERN = Pattern.compile(
-            "(?:第\\s*([0-9零一二三四五六七八九十百]+)\\s*[集话章回])|"
-                    + "(?i)(?<![A-Za-z0-9])(?:EP?|EPISODE)\\s*([0-9]{1,4})(?![0-9])|"
-                    + "(?<!\\d)([0-9]{1,4})\\s*[集话章回]");
-    private static final Pattern QUALITY_PATTERN = Pattern.compile(
-            "(?i)[\\[【(（]?(?:HDR10\\+?|HDR VIVID|DOLBY[ .-]?VISION|杜比视界|"
-                    + "DOLBY[ .-]?ATMOS|杜比全景声|IMAX ENHANCED|HDR|4K|8K|2K|"
-                    + "UHD|FHD|HD|SD|2160P|1080P|720P|480P|"
-                    + "HEVC|H\\.?26[45]|X26[45]|AVC|AV1|60FPS|60帧|"
-                    + "高码率|高码|AAC|AC3|DTS|FLAC|ATMOS|"
-                    + "WEB[- .]?DL|WEBRIP|BLURAY|REMUX|SDR|"
-                    + "国粤双语|国语|粤语|中字|简中|繁中|内封|外挂|"
-                    + "无水印|未删减|完整版|臻彩|臻享)[\\]】)）]?");
-    private static final Pattern VERSION_PATTERN = Pattern.compile(
-            "(?i)(?<![A-Za-z0-9])(?:V|VER)\\.?\\s*\\d+(?:\\.\\d+)?(?![A-Za-z0-9])");
-
     public static class Markers {
         public long introStartMs = -1;
         public long introEndMs = -1;
         public long outroStartMs = -1;
+        public long recapStartMs = -1;
+        public long recapEndMs = -1;
         public String imdbId = "";
         public String tmdbTitle = "";
         public String source = "";
@@ -85,8 +64,12 @@ public final class AutoSkipService {
             return outroStartMs > 0;
         }
 
+        public boolean hasRecap() {
+            return recapStartMs >= 0;
+        }
+
         public boolean hasAny() {
-            return hasIntro() || hasOutro();
+            return hasIntro() || hasOutro() || hasRecap();
         }
     }
 
@@ -101,6 +84,7 @@ public final class AutoSkipService {
         String originalTitle;
         String date;
         boolean animation;
+        boolean exact;
     }
 
     private AutoSkipService() {
@@ -207,17 +191,18 @@ public final class AutoSkipService {
             result.error = "TMDB Key 未配置或格式错误";
             return result;
         }
-        String title = normalizeTitle(media.title);
-        if (TextUtils.isEmpty(title)) title = normalizeTitle(media.artist);
+        MediaIdentityResolver.Identity identity = MediaIdentityResolver.resolve(
+                media.title, media.artist, media.url);
+        String title = identity.getPrimarySearchName();
         if (TextUtils.isEmpty(title)) {
             result.error = "无法识别当前片名";
             return result;
         }
 
-        int[] seasonEpisode = parseSeasonEpisode(media);
+        int[] seasonEpisode = identity.getSeasonEpisode();
         int season = seasonEpisode[0];
         int episode = seasonEpisode[1];
-        Candidate candidate = searchTmdb(title, apiKey, language, episode <= 0);
+        Candidate candidate = searchTmdb(identity, apiKey, language, episode <= 0);
         if (candidate == null || candidate.id <= 0) {
             String keyStatus = testApiKey(apiKey);
             result.error = keyStatus.contains("成功")
@@ -254,9 +239,10 @@ public final class AutoSkipService {
                 || TextUtils.isEmpty(current.imdbId)) return;
         if (!config.isAutoSkipEnabled()) return;
 
-        String title = normalizeTitle(media.title);
-        if (TextUtils.isEmpty(title)) title = normalizeTitle(media.artist);
-        int[] seasonEpisode = parseSeasonEpisode(media);
+        MediaIdentityResolver.Identity identity = MediaIdentityResolver.resolve(
+                media.title, media.artist, media.url);
+        String title = identity.getPrimarySearchName();
+        int[] seasonEpisode = identity.getSeasonEpisode();
         final int season = seasonEpisode[0];
         final int currentEpisode = seasonEpisode[1];
         if (TextUtils.isEmpty(title) || currentEpisode <= 0) return;
@@ -293,6 +279,23 @@ public final class AutoSkipService {
                 }
             });
         }
+    }
+
+    private static Candidate searchTmdb(MediaIdentityResolver.Identity identity,
+                                        String apiKey, String language,
+                                        boolean movieOnly) {
+        Candidate fallback = null;
+        int attempts = 0;
+        for (String title : identity.searchNames) {
+            if (attempts >= 4) break;
+            if (TextUtils.isEmpty(title)) continue;
+            attempts++;
+            Candidate candidate = searchTmdb(title, apiKey, language, movieOnly);
+            if (candidate == null || candidate.id <= 0) continue;
+            if (candidate.exact) return candidate;
+            if (fallback == null) fallback = candidate;
+        }
+        return fallback;
     }
 
     private static Candidate searchTmdb(String title, String apiKey, String language,
@@ -341,6 +344,7 @@ public final class AutoSkipService {
                 String normalizedOriginal = normalizeForCompare(candidate.originalTitle);
                 if (normalizedQuery.equals(normalizedName)
                         || normalizedQuery.equals(normalizedOriginal)) {
+                    candidate.exact = true;
                     return candidate;
                 }
             }
@@ -355,7 +359,9 @@ public final class AutoSkipService {
         try {
             String body = tmdbGet("/" + candidate.mediaType + "/" + candidate.id
                     + "/external_ids", apiKey, null);
-            return new JSONObject(body).optString("imdb_id", "").trim();
+            String imdbId = new JSONObject(body).optString("imdb_id", "").trim();
+            if ("null".equalsIgnoreCase(imdbId) || !imdbId.matches("tt\\d+")) return "";
+            return imdbId;
         } catch (Exception e) {
             DanmakuSpider.log("TMDB 外部 ID 查询失败: " + safeMessage(e));
             return "";
@@ -379,14 +385,17 @@ public final class AutoSkipService {
                 JSONObject json = new JSONObject(OkHttp.string(url.toString(), 12000));
                 JSONObject intro = json.optJSONObject("intro");
                 JSONObject outro = json.optJSONObject("outro");
-                if (intro == null && outro == null && attempt == 0) {
+                JSONObject recap = json.optJSONObject("recap");
+                if (intro == null && outro == null && recap == null && attempt == 0) {
                     Thread.sleep(300);
                     continue;
                 }
-                applySegment(result, intro, "IntroDB");
+                applySegment(result, intro, "IntroDB", "intro");
+                applySegment(result, recap, "IntroDB", "recap");
                 if (outro != null) {
                     long start = outro.optLong("start_ms", -1);
                     if (start > 0) result.outroStartMs = start;
+                    if (start > 0) result.source = "IntroDB";
                 }
                 return;
             } catch (Exception e) {
@@ -402,13 +411,22 @@ public final class AutoSkipService {
         result.error = "IntroDB 请求失败: " + safeMessage(lastError);
     }
 
-    private static void applySegment(Markers result, JSONObject segment, String source) {
+    private static void applySegment(Markers result, JSONObject segment,
+                                     String source, String type) {
         if (segment == null) return;
         long start = segment.optLong("start_ms", -1);
         long end = segment.optLong("end_ms", -1);
-        if (start < 0 || end <= start) return;
-        result.introStartMs = start;
-        result.introEndMs = end;
+        if (start < 0) return;
+        if ("intro".equals(type)) {
+            if (end <= start) return;
+            result.introStartMs = start;
+            result.introEndMs = end;
+        } else if ("recap".equals(type)) {
+            result.recapStartMs = start;
+            result.recapEndMs = end > start ? end : -1;
+        } else {
+            return;
+        }
         result.source = source;
     }
 
@@ -507,6 +525,8 @@ public final class AutoSkipService {
             result.introStartMs = json.optLong("introStart", -1);
             result.introEndMs = json.optLong("introEnd", -1);
             result.outroStartMs = json.optLong("outroStart", -1);
+            result.recapStartMs = json.optLong("recapStart", -1);
+            result.recapEndMs = json.optLong("recapEnd", -1);
             result.imdbId = json.optString("imdbId", "");
             result.tmdbTitle = json.optString("tmdbTitle", "");
             result.source = json.optString("source", "");
@@ -526,6 +546,8 @@ public final class AutoSkipService {
                     .put("introStart", value.introStartMs)
                     .put("introEnd", value.introEndMs)
                     .put("outroStart", value.outroStartMs)
+                    .put("recapStart", value.recapStartMs)
+                    .put("recapEnd", value.recapEndMs)
                     .put("imdbId", value.imdbId)
                     .put("tmdbTitle", value.tmdbTitle)
                     .put("source", value.source)
@@ -537,134 +559,25 @@ public final class AutoSkipService {
     }
 
     private static String makeCacheKey(ChapterManager.MediaInfo media) {
-        String title = normalizeTitle(media.title);
-        if (TextUtils.isEmpty(title)) title = normalizeTitle(media.artist);
-        int[] seasonEpisode = parseSeasonEpisode(media);
+        MediaIdentityResolver.Identity identity = MediaIdentityResolver.resolve(
+                media.title, media.artist, media.url);
+        String title = identity.getPrimarySearchName();
+        int[] seasonEpisode = identity.getSeasonEpisode();
         return makeCacheKey(title, seasonEpisode[0], seasonEpisode[1]);
     }
 
     private static String makeCacheKey(String title, int season, int episode) {
         if (TextUtils.isEmpty(title) || episode <= 0) return "";
-        return normalizeForCompare(title) + "|" + season + "|" + episode;
+        return MediaIdentityResolver.normalizeForCompare(title)
+                + "|" + season + "|" + episode;
     }
 
     private static String cachePrefKey(String key) {
         return "seg_" + Integer.toHexString(key.hashCode());
     }
 
-    private static int[] parseSeasonEpisode(ChapterManager.MediaInfo media) {
-        String metadata = nullToEmpty(media.title) + " " + nullToEmpty(media.artist);
-        int[] parsed = findSeasonEpisode(metadata);
-        if (!TextUtils.isEmpty(media.url)) {
-            String path = media.url;
-            int query = path.indexOf('?');
-            if (query >= 0) path = path.substring(0, query);
-            int slash = path.lastIndexOf('/');
-            if (slash >= 0) path = path.substring(slash + 1);
-            if (parsed[1] <= 0) {
-                int[] fromUrl = findSeasonEpisode(path);
-                if (fromUrl[1] > 0) {
-                    parsed = new int[]{
-                            fromUrl[0] > 0 ? fromUrl[0] : parsed[0],
-                            fromUrl[1]
-                    };
-                }
-            }
-        }
-        return new int[]{Math.max(1, parsed[0]), Math.max(0, parsed[1])};
-    }
-
-    private static int[] findSeasonEpisode(String text) {
-        int season = parseChineseOrNumber(findGroup(SEASON_PATTERN, text));
-        int episode = 0;
-        Matcher combined = SEASON_EPISODE_PATTERN.matcher(text);
-        if (combined.find()) {
-            int parsedSeason = parseChineseOrNumber(combined.group(1));
-            if (parsedSeason > 0) season = parsedSeason;
-            episode = parseChineseOrNumber(combined.group(2));
-        }
-        if (episode <= 0) {
-            Matcher matcher = EPISODE_PATTERN.matcher(text);
-            if (matcher.find()) {
-                episode = parseChineseOrNumber(firstNonEmpty(
-                        matcher.group(1), matcher.group(2), matcher.group(3)));
-            }
-        }
-        return new int[]{season, episode};
-    }
-
-    private static String normalizeTitle(String value) {
-        if (TextUtils.isEmpty(value)) return "";
-        String title = value;
-        int slash = title.lastIndexOf('/');
-        if (slash >= 0) title = title.substring(slash + 1);
-        int dot = title.lastIndexOf('.');
-        if (dot > 0 && title.length() - dot <= 8) title = title.substring(0, dot);
-        title = QUALITY_PATTERN.matcher(title).replaceAll(" ");
-        title = VERSION_PATTERN.matcher(title).replaceAll(" ");
-        title = SEASON_EPISODE_PATTERN.matcher(title).replaceAll(" ");
-        title = EPISODE_PATTERN.matcher(title).replaceAll(" ");
-        title = title.replaceAll("[\\[【(（].*?[\\]】)）]", " ");
-        title = title.replaceAll("(?i)\\b(?:S\\d{1,2}|E\\d{1,4}|EP\\d{1,4})\\b", " ");
-        title = title.replaceAll("[_]+", " ");
-        title = title.replaceAll("^[\\s._\\-—]+|[\\s._\\-—]+$", "");
-        title = title.replaceAll("\\s{2,}", " ").trim();
-        return title;
-    }
-
     private static String normalizeForCompare(String value) {
-        if (value == null) return "";
-        return value.toLowerCase().replaceAll("[^\\p{L}\\p{N}]", "");
-    }
-
-    private static String findGroup(Pattern pattern, String text) {
-        Matcher matcher = pattern.matcher(text);
-        if (!matcher.find()) return "";
-        for (int i = 1; i <= matcher.groupCount(); i++) {
-            if (!TextUtils.isEmpty(matcher.group(i))) return matcher.group(i);
-        }
-        return "";
-    }
-
-    private static int parseChineseOrNumber(String value) {
-        if (TextUtils.isEmpty(value)) return 0;
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (Exception ignored) {
-            return chineseNumber(value.trim());
-        }
-    }
-
-    private static int chineseNumber(String value) {
-        if (TextUtils.isEmpty(value)) return 0;
-        String digits = "零一二三四五六七八九";
-        if (value.length() == 1) {
-            int index = digits.indexOf(value.charAt(0));
-            return index >= 0 ? index : 0;
-        }
-        int result = 0;
-        int current = 0;
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            int digit = digits.indexOf(ch);
-            if (digit >= 0) {
-                current = digit;
-            } else if (ch == '十') {
-                result += (current == 0 ? 1 : current) * 10;
-                current = 0;
-            } else if (ch == '百') {
-                result += (current == 0 ? 1 : current) * 100;
-                current = 0;
-            }
-        }
-        return result + current;
-    }
-
-    private static String firstNonEmpty(String... values) {
-        for (String value : values) {
-            if (!TextUtils.isEmpty(value)) return value;
-        }
-        return "";
+        return MediaIdentityResolver.normalizeForCompare(value);
     }
 
     private static String encode(String value) {
@@ -673,10 +586,6 @@ public final class AutoSkipService {
         } catch (Exception e) {
             return "";
         }
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 
     private static String safeMessage(Throwable throwable) {

@@ -40,6 +40,7 @@ import com.github.catvod.spider.danmu.SharedPreferencesService;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -49,6 +50,8 @@ import java.util.Set;
 
 public class DanmakuUIHelper {
     private static volatile boolean chapterDialogLoading;
+    private static volatile WeakReference<AlertDialog> activeQRCodeDialog =
+            new WeakReference<>(null);
 
     // 定义统一的颜色常量 - 现代化配色方案
     private static final int PRIMARY_COLOR = 0xFF007AFF;        // 主色调蓝色 - 第一层(页签)
@@ -3456,7 +3459,7 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 });
                 return;
             }
-            boolean ok = ChapterManager.seekTo(row.positionMs);
+            boolean ok = ChapterManager.seekToManual(row.positionMs);
             if (ok) dialog.dismiss();
             else Utils.safeShowToast(activity, "章节跳转失败");
         });
@@ -3726,7 +3729,7 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                     toggleChapterAuto(activity, media, refreshRows);
                     return;
                 }
-                boolean ok = ChapterManager.seekTo(row.positionMs);
+                boolean ok = ChapterManager.seekToManual(row.positionMs);
                 if (ok) dialog.dismiss();
                 else Utils.safeShowToast(activity, "章节跳转失败");
             });
@@ -3778,6 +3781,9 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         rows.add(new ChapterRow("Auto 去片头尾：" +
                 (config != null && config.isAutoSkipEnabled() ? "开" : "关"),
                 ChapterRow.AUTO_TOGGLE_POSITION, true));
+        if (data.recapStartMs >= 0) {
+            addChapterRow(rows, seen, "前情回顾", data.recapStartMs);
+        }
         if (data.introStartMs >= 0) {
             addChapterRow(rows, seen, "片头开始", data.introStartMs);
         }
@@ -3819,6 +3825,10 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         }
 
         List<ChapterManager.Chapter> items = new ArrayList<>();
+        if (data.recapStartMs >= 0) {
+            items.add(new ChapterManager.Chapter("marker-recap", "前情回顾",
+                    data.recapStartMs, true));
+        }
         if (data.introStartMs >= 0) {
             items.add(new ChapterManager.Chapter("marker-intro-start", "片头开始",
                     data.introStartMs, true));
@@ -3876,7 +3886,7 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 Button item = createChapterPanelItem(activity, anchor, compact,
                         prefix + chapter.title + "  " + ChapterManager.formatTime(chapter.startMs),
                         v -> {
-                            boolean ok = ChapterManager.seekTo(chapter.startMs);
+                            boolean ok = ChapterManager.seekToManual(chapter.startMs);
                             if (ok) popup.dismiss();
                             else Utils.safeShowToast(activity, "章节跳转失败");
                         });
@@ -3991,6 +4001,10 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         ChapterManager.ChapterData data = ChapterManager.loadData(activity, media);
         List<ChapterManager.Chapter> nativeChapters = ChapterManager.getNativeChapters(activity);
         List<ChapterManager.Chapter> markers = new ArrayList<>();
+        if (data.recapStartMs >= 0) {
+            markers.add(new ChapterManager.Chapter("marker-recap", "前情回顾",
+                    data.recapStartMs, true));
+        }
         if (data.introStartMs >= 0) {
             markers.add(new ChapterManager.Chapter("marker-intro-start", "片头开始",
                     data.introStartMs, true));
@@ -4063,7 +4077,9 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         TextView markerInfo = new TextView(activity);
         markerInfo.setText("片头 " + ChapterManager.formatTime(data.introStartMs) + " → "
                 + ChapterManager.formatTime(data.introEndMs) + "   片尾 "
-                + ChapterManager.formatTime(data.outroStartMs));
+                + ChapterManager.formatTime(data.outroStartMs) + "\n回顾 "
+                + ChapterManager.formatTime(data.recapStartMs) + " → "
+                + ChapterManager.formatTime(data.recapEndMs));
         markerInfo.setTextColor(AURORA_CYAN);
         markerInfo.setTextSize(auroraSize(activity, 11, 12, 14));
         markerInfo.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 6));
@@ -4131,7 +4147,7 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
         Button item = createChapterActionButton(activity,
                 label + "  " + chapter.title + "  [" + ChapterManager.formatTime(chapter.startMs) + "]",
                 v -> {
-                    boolean ok = ChapterManager.seekTo(chapter.startMs);
+                    boolean ok = ChapterManager.seekToManual(chapter.startMs);
                     if (dialogHolder[0] != null && ok) dialogHolder[0].dismiss();
                     if (!ok) Utils.safeShowToast(activity, "章节跳转失败");
                 });
@@ -4240,6 +4256,26 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 .show();
     }
 
+    public static void dismissQRCodeDialog() {
+        WeakReference<AlertDialog> reference = activeQRCodeDialog;
+        AlertDialog dialog = reference == null ? null : reference.get();
+        if (dialog == null) return;
+
+        new Handler(Looper.getMainLooper()).post(() -> {
+            WeakReference<AlertDialog> current = activeQRCodeDialog;
+            if (current == null || current.get() != dialog) return;
+            activeQRCodeDialog = new WeakReference<>(null);
+            try {
+                if (dialog.isShowing()) {
+                    dialog.dismiss();
+                    DanmakuSpider.log("[二维码] 手机已打开配置页，自动关闭二维码");
+                }
+            } catch (Exception e) {
+                DanmakuSpider.log("[二维码] 自动关闭失败: " + e.getMessage());
+            }
+        });
+    }
+
     public static void showQRCodeDialog(Activity activity, String url) {
         showQRCodeDialog(activity, url, null);
     }
@@ -4283,6 +4319,10 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                 AlertDialog dialog = builder.create();
                 dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
                 dialog.setOnDismissListener(d -> {
+                    WeakReference<AlertDialog> current = activeQRCodeDialog;
+                    if (current != null && current.get() == dialog) {
+                        activeQRCodeDialog = new WeakReference<>(null);
+                    }
                     if (onDismiss != null) onDismiss.run();
                 });
 
@@ -4293,6 +4333,12 @@ android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.Gr
                     hintView.setText("二维码生成失败，请手动输入地址");
                 }
 
+                WeakReference<AlertDialog> previousReference = activeQRCodeDialog;
+                AlertDialog previous = previousReference == null ? null : previousReference.get();
+                if (previous != null && previous != dialog && previous.isShowing()) {
+                    previous.dismiss();
+                }
+                activeQRCodeDialog = new WeakReference<>(dialog);
                 safeShowDialog(activity, dialog);
             } catch (Exception e) {
                 e.printStackTrace();
